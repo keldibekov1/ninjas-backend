@@ -1,0 +1,612 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// Crew management models
+model Crew {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members     CrewMember[]
+  assignments CrewAssignment[]
+
+  @@unique([name, tenantId])
+  @@unique([id, tenantId])
+  @@map("crews")
+}
+
+model CrewMember {
+  id       Int      @id @default(autoincrement())
+  workerId Int
+  crewId   Int
+  isLeader Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  // Relations
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  crew   Crew   @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@unique([workerId, crewId])
+  @@map("crew_members")
+}
+
+model CrewAssignment {
+  id        Int       @id @default(autoincrement())
+  crewId    Int
+  reportId  Int
+  tenantId  Int
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  crew   Crew   @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  order  Order  @relation("OrderCrewAssignments", fields: [reportId, tenantId], references: [report_id, tenantId], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([crewId, reportId])
+  @@map("crew_assignments")
+}
+
+// Stripe-related models
+model StripeCustomer {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @unique // One-to-one with Tenant
+  customerId String   @unique // Stripe customer ID
+  email      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptions StripeSubscription[]
+
+  @@map("stripe_customers")
+}
+
+model StripeSubscription {
+  id                 Int                @id @default(autoincrement())
+  stripeCustomerId   Int
+  subscriptionId     String             @unique // Stripe subscription ID
+  status             SubscriptionStatus
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  customer StripeCustomer  @relation(fields: [stripeCustomerId], references: [id], onDelete: Cascade)
+  invoices StripeInvoice[]
+
+  @@map("stripe_subscriptions")
+}
+
+model StripeInvoice {
+  id               Int           @id @default(autoincrement())
+  subscriptionId   Int
+  invoiceId        String        @unique // Stripe invoice ID
+  amount           Float
+  currency         String
+  status           InvoiceStatus
+  hostedInvoiceUrl String?
+  pdfInvoiceUrl    String?
+  periodStart      DateTime
+  periodEnd        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  subscription StripeSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@map("stripe_invoices")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  TRIALING
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  UNCOLLECTIBLE
+  VOID
+}
+
+model MapArea {
+  id          Int     @id @default(autoincrement())
+  geometry    Json // Stores GeoJSON Polygon data
+  areaSize    Float   @map("area_size")
+  name        String? @db.VarChar(255)
+  description String? @db.Text
+  isActive    Boolean @default(true) @map("is_active")
+
+  // Tenant relationship
+  tenantId Int    @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  // Creator relationship
+  createdBy Int   @map("created_by")
+  creator   Admin @relation(fields: [createdBy], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([createdBy])
+  @@map("map_areas")
+}
+
+// Global administration models remain unchanged
+model GlobalAdmin {
+  id        Int            @id @default(autoincrement())
+  name      String
+  username  String         @unique
+  password  String
+  role      GlobalRoleEnum @default(ADMIN)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+enum GlobalRoleEnum {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT
+}
+
+model BouncieConfig {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @unique // One-to-one with Tenant
+  clientId     String
+  clientSecret String
+  grantType    String   @default("authorization_code")
+  code         String
+  redirectUri  String
+  accessToken  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Tenant {
+  id        Int          @id @default(autoincrement())
+  name      String
+  domain    String       @unique
+  plan      PlanType     @default(BASIC)
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  //Bouncie Config
+  bouncieConfig BouncieConfig?
+
+  // PPW Configuration Fields
+  ppwUsername     String? // Optional username for PPW API
+  ppwPasswordHash String? // SHA1 hashed password
+  ppwSiteId       String? @unique // UUIDv4 site identifier
+
+  // Relationships
+  admins            Admin[]
+  workers           Worker[]
+  orders            Order[]
+  tasks             Task[]
+  expenses          Expense[]
+  folders           FolderDoc[]
+  taskItems         Taskitems[]
+  jobNotes          JobNote[]
+  bidPhotos         BidPhoto[]
+  taskTimeRecords   TaskTimeRecord[]
+  shiftTimeRecords  ShiftTimeRecord[]
+  assignments       Assignment[]
+  syncLogs          SyncLog[]
+  files             FileDoc[] // Added missing relation
+  mapAreas          MapArea[] // Added reverse relation to MapArea
+  expenseCategories ExpenseCategory[]
+  crews             Crew[]
+  crewAssignments   CrewAssignment[]
+
+  stripeCustomer StripeCustomer?
+}
+
+model Worker {
+  id                Int     @id @default(autoincrement())
+  tenantId          Int // New field
+  name              String
+  username          String
+  password          String
+  hourly_pay_rate   Float?
+  daily_pay_rate    Float   @default(0.0)
+  extra_hourly_rate Float   @default(0.0)
+  groupId           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments      Assignment[]
+  earnings         Expense[]
+  completedTasks   Task[]            @relation("CompletedBy")
+  taskTimeRecords  TaskTimeRecord[]  @relation("worker")
+  shiftTimeRecords ShiftTimeRecord[]
+  crewMemberships  CrewMember[] // New relation for crew membership
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([username, tenantId]) // Username should be unique within a tenant
+  @@unique([id, tenantId])
+}
+
+model Assignment {
+  id        Int @id @default(autoincrement())
+  tenantId  Int
+  worker_id Int
+  report_id Int
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  worker Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  order  Order  @relation(fields: [report_id, tenantId], references: [report_id, tenantId], onDelete: Cascade, onUpdate: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+}
+
+model SyncStatus {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @unique
+  isRunning Boolean  @default(false)
+  progress  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@map("sync_status")
+}
+
+model Order {
+  id                     Int         @id @default(autoincrement())
+  tenantId               Int // New field
+  report_id              Int
+  wo_number              String?
+  org_wo_num             Int?
+  wo_status              String?
+  client_company_alias   String?
+  cust_text              String?
+  loan_number            String?
+  loan_type_other        String?
+  date_received          String?
+  date_due               String?
+  start_date             String?
+  address                String?
+  city                   String?
+  state                  String?
+  zip                    String?
+  comments               String?
+  work_type_alias        String?
+  mortgage_name          String?
+  ppw_report_id          Float?
+  import_user_id         String?
+  mcs_woid               String?
+  bg_checkin_provider    String?
+  autoimport_client_orig String?
+  wo_number_orig         String?
+  wo_photo_ts_format     String?
+  autoimport_userid      String?
+  lot_size               String?
+  lock_code              String?
+  key_code               String?
+  broker_name            String?
+  broker_company         String?
+  broker_phone           String?
+  broker_email           String?
+  has_foh                Boolean?
+  coordinates            String?
+  status                 OrderStatus @default(NEW)
+  completed_date         DateTime?
+  bit_photos_url         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  Tasks           Task[]
+  JobNotes        JobNote[]
+  Workers         Assignment[]
+  bidPhotos       BidPhoto[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  expenses        Expense[]
+  CrewAssignments CrewAssignment[] @relation("OrderCrewAssignments")
+
+  @@unique([report_id, tenantId]) // Make report_id unique within tenant scope
+  @@unique([id, tenantId])
+}
+
+model JobNote {
+  id        Int           @id @default(autoincrement())
+  tenantId  Int
+  report_id Int
+  note_text String
+  files     JobNoteFile[]
+
+  order  Order  @relation(fields: [report_id, tenantId], references: [report_id, tenantId], onDelete: Cascade, onUpdate: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model JobNoteFile {
+  id        Int     @id @default(autoincrement())
+  fileName  String
+  fileUrl   String
+  jobNote   JobNote @relation(fields: [jobNoteId], references: [id])
+  jobNoteId Int
+}
+
+model Task {
+  id              Int       @id @default(autoincrement())
+  tenantId        Int
+  report_id       Int
+  desc            String?
+  qty             Int
+  price           Int
+  total           Int
+  add             String?
+  isVisible       Boolean   @default(true)
+  isCompleted     Boolean   @default(false)
+  completedWorker Int?
+  completedDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  completedBy     Worker?          @relation("CompletedBy", fields: [completedWorker], references: [id])
+  order           Order            @relation(fields: [report_id, tenantId], references: [report_id, tenantId], onDelete: Cascade, onUpdate: Cascade)
+  TaskTimeRecords TaskTimeRecord[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+}
+
+model BidPhoto {
+  id         Int    @id @default(autoincrement())
+  tenantId   Int // New field
+  url        String
+  filename   String
+  taskItem   String
+  taskItemId Int?
+  orderId  Int
+  metadata Json?
+
+  order  Order  @relation(fields: [orderId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+  @@index([orderId])
+}
+
+model FolderDoc {
+  id       Int    @id @default(autoincrement())
+  tenantId Int // New field
+  name     String
+  parentId Int?
+
+  parent   FolderDoc?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children FolderDoc[] @relation("FolderHierarchy")
+  files    FileDoc[]
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+}
+
+model FileDoc {
+  id       Int     @id @default(autoincrement())
+  tenantId Int // New field
+  name     String?
+  filename String
+  url      String
+  folderId Int
+
+  folder FolderDoc @relation(fields: [folderId], references: [id])
+  tenant Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+}
+
+model TaskTimeRecord {
+  id         Int    @id @default(autoincrement())
+  tenantId   Int // New field
+  task_id    Int
+  worker_id  Int?
+  start_time Float
+  end_time   Float?
+  spent_time Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task   Task    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  worker Worker? @relation("worker", fields: [worker_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+}
+
+model ShiftTimeRecord {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int // New field
+  worker_id      Int
+  clockin_time   Float
+  finishjob_time Float?
+  clockout_time  Float?
+  date           DateTime @default(now())
+
+  worker Worker @relation(fields: [worker_id], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+}
+
+model Taskitems {
+  id        Int    @id @default(autoincrement())
+  tenantId  Int // New field
+  item_name String
+  price     Float
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([item_name, tenantId]) // item_name should be unique within a tenant
+  @@unique([id, tenantId])
+}
+
+model Expense {
+  id       Int            @id @default(autoincrement())
+  tenantId Int // New field
+  workerId Int?
+  amount   Float
+  action   ExpenseAction?
+  comment  String?
+  date     DateTime       @default(now())
+  addedBy  ExpenseEnum?   @default(TELEGRAM_BOT)
+  files    ExpenseFile[]
+
+  categoryId Int
+  orderId    Int? // Optional because some expenses might not be related to orders
+
+  worker   Worker?         @relation(fields: [workerId], references: [id])
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category ExpenseCategory @relation(fields: [categoryId], references: [id])
+  order    Order?          @relation(fields: [orderId, tenantId], references: [report_id, tenantId])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([id, tenantId])
+}
+
+model ExpenseFile {
+  id        Int     @id @default(autoincrement())
+  fileName  String
+  fileUrl   String
+  fileKey   String
+  expense   Expense @relation(fields: [expenseId], references: [id])
+  expenseId Int
+}
+
+model ExpenseCategory {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  expenses    Expense[]
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, tenantId]) // Category name should be unique within a tenant
+  @@unique([id, tenantId])
+}
+
+model SyncLog {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int // New field
+  spentTime  String
+  syncedDate DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+}
+
+model Admin {
+  id                   Int       @id @default(autoincrement())
+  tenantId             Int
+  role                 RoleEnum?
+  name                 String
+  username             String // This will store the email
+  email                String?   @unique
+  password             String
+  emailVerified        DateTime? // For email verification status
+  googleId             String? // For Google OAuth
+  verificationToken    String? // For email verification process
+  resetPasswordToken   String? // For password reset functionality
+  resetPasswordExpires DateTime?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mapAreas MapArea[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([username, tenantId])
+  @@unique([email, tenantId])
+  @@unique([id, tenantId])
+  @@unique([googleId])
+  @@index([email])
+}
+
+enum PlanType {
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum RoleEnum {
+  ADMIN
+  MANAGER
+  QC
+}
+
+enum OrderStatus {
+  NEW
+  COMPLETED
+  REJECTED
+  UNCOMPLETED
+}
+
+enum ExpenseEnum {
+  TELEGRAM_BOT
+  ADMIN
+}
+
+enum ExpenseAction {
+  SPENDING
+  PENALTY
+}

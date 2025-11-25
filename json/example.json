@@ -1,0 +1,51 @@
+{
+  "message": "Reports are retrieved successfully!",
+  "orders": [
+    {
+      "report_id": 41831425,
+      "wo_number": 22428,
+      "city": "Naperville",
+      "address": "3812 Rosada Drive",
+      "status": "COMPLETED",
+      "task": {
+        "overall": {
+          "total": 2,
+          "spent_amount": 400,
+          "spent_time": 15000
+        },
+        "list": [
+          {
+            "id": 1,
+            "desc": "this is task 1 description",
+            "quantity": 2,
+            "price": 200,
+            "total": 400,
+            "completion": {
+              "spent_time": 3600,
+              "spent_amount": "7200 (worker hourly pay rate * spent time)",
+              "worker": {
+                "id": 1,
+                "name": "Juratbek Xudayberganov"
+              }
+            }
+          },
+          {
+            "id": 2,
+            "desc": "this is task 2 description",
+            "quantity": 1,
+            "price": 100,
+            "total": 100,
+            "completion": {
+              "spent_time": 7200,
+              "spent_amount": "14400 (worker hourly pay rate * spent time",
+              "worker": {
+                "id": 2,
+                "name": "Ahmadjon Nematov"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
