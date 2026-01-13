@@ -29,6 +29,7 @@ import { archivePhotos } from './types';
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
+import { PhotoType } from '@prisma/client';
 
 @Controller('bid-photos')
 @UseGuards(AuthGuard)
@@ -132,9 +133,10 @@ export class BidPhotosController {
     @Param('orderId', ParseIntPipe) orderId: number,
     @UploadedFiles() files: Express.Multer.File[],
     @Body('taskItem') taskItem: TaskItemType,
-    @Body('taskItemId') taskItemId: number,
+    @Body('taskItemId', new ParseIntPipe({ optional: true })) taskItemId: number,
     @Body('metadata', new ValidationPipe({ transform: true }))
-    metadata: string | string[], // Add metadata parameter
+    metadata: string | string[],
+    @Body('photoType') photoTypeInput: string,
     @Req() req: Request,
   ) {
     try {
@@ -151,13 +153,23 @@ export class BidPhotosController {
         throw new BadRequestException('taskItem is required');
       }
 
+       let photoType: PhotoType;
+        if (photoTypeInput === 'PROGRESS') {
+            photoType = PhotoType.PROGRESS;
+        } else {
+            photoType = PhotoType.BID; // default
+        }
+
+ 
+
       return await this.bidPhotosService.uploadPhotos(
         tenantId,
         orderId,
         files,
         taskItem,
         taskItemId,
-        Array.isArray(metadata) ? metadata : [metadata], // Ensure metadata is an array
+        Array.isArray(metadata) ? metadata : [metadata],
+        photoType ?? PhotoType.BID,
       );
     } catch (error) {
       console.error('Upload error:', error);

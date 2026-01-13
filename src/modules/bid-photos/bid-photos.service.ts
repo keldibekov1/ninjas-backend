@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
 import { Response } from 'express';
 import archiver from 'archiver';
+import { PhotoType } from '@prisma/client';
 
 @Injectable()
 export class BidPhotosService {
@@ -179,6 +180,7 @@ export class BidPhotosService {
     taskItem: string,
     taskItemId?: number,
     metadata?: string | string[], // Add metadata parameter
+    photoType: PhotoType = PhotoType.BID
   ) {
     // Convert metadata to array if it's a single string
     const metadataArray = Array.isArray(metadata)
@@ -231,6 +233,7 @@ export class BidPhotosService {
           metadata: parsedMetadata, // Add metadata to the record
           order: { connect: { id: order.id } },
           tenant: { connect: { id: tenantId } },
+          photoType
         },
       });
     });

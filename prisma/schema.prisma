@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider          = "postgresql"
   url               = env("DATABASE_URL")
-  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  // shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 // Crew management models
@@ -391,6 +391,7 @@ model BidPhoto {
   taskItemId Int?
   orderId  Int
   metadata Json?
+  photoType    PhotoType @default(BID)
 
   order  Order  @relation(fields: [orderId], references: [id])
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -400,6 +401,12 @@ model BidPhoto {
 
   @@unique([id, tenantId])
   @@index([orderId])
+}
+
+
+enum PhotoType {
+  BID         
+  PROGRESS     
 }
 
 model FolderDoc {
