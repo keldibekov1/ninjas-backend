@@ -27,6 +27,11 @@ model Crew {
   @@unique([id, tenantId])
   @@map("crews")
 }
+model Tst {
+  id   Int    @id @default(autoincrement())
+  name String
+}
+
 
 model CrewMember {
   id       Int      @id @default(autoincrement())
