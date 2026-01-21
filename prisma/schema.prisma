@@ -389,7 +389,7 @@ model Task {
 
 model BidPhoto {
   id         Int    @id @default(autoincrement())
-  tenantId   Int // New field
+  tenantId   Int 
   url        String
   filename   String
   taskItem   String

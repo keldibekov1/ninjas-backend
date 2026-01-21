@@ -161,6 +161,81 @@ export class ExpenseService {
     };
   }
 
+  async getMyExpenses(workerId: number, tenantId: number) {
+  const whereClause: any = {
+    workerId,
+    tenantId,
+  };
+
+  
+
+  const expenses = await this.prisma.expense.findMany({
+    where: whereClause,
+    include: {
+      category: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      order: {
+        select: {
+          wo_number: true,
+        },
+      },
+      files: true,
+    },
+    orderBy: {
+      id: 'desc',
+    },
+  });
+
+  const spendings = await this.prisma.expense.aggregate({
+    where: {
+      ...whereClause,
+      action: 'SPENDING',
+    },
+    _sum: {
+      amount: true,
+    },
+  });
+
+  const penalties = await this.prisma.expense.aggregate({
+    where: {
+      ...whereClause,
+      action: 'PENALTY',
+    },
+    _sum: {
+      amount: true,
+    },
+  });
+
+  const sanitizedExpenses = expenses.map(
+    ({ tenantId, workerId, ...expense }) => ({
+      ...expense,
+      categoryName: expense.category?.name,
+      woNumber: expense.order?.wo_number,
+      files: expense.files.map(file => ({
+        id: file.id,
+        fileName: file.fileName,
+        fileUrl: file.fileUrl,
+      })),
+    }),
+  );
+
+  return {
+    stats: {
+      total:
+        (spendings._sum.amount ?? 0) +
+        (penalties._sum.amount ?? 0),
+      spendings: spendings._sum.amount ?? 0,
+      penalties: penalties._sum.amount ?? 0,
+    },
+    expenses: sanitizedExpenses,
+  };
+}
+
+
   public async update(data: UpdateExpenseDto, files?: Express.Multer.File[], tenantId?: number | null) {
     // Build where clause for finding expense
     const whereClause: any = { id: data.id };

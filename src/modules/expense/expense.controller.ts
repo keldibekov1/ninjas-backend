@@ -16,7 +16,12 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ExpenseService } from './expense.service';
-import { CreateExpenseDto, DeleteExpenseDto, FilterExpensesQueryDto, UpdateExpenseDto } from './dto';
+import {
+  CreateExpenseDto,
+  DeleteExpenseDto,
+  FilterExpensesQueryDto,
+  UpdateExpenseDto,
+} from './dto';
 import { WorkerService } from '../worker/worker.service';
 import { AuthGuard } from '../../guards/auth.guard';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
@@ -32,12 +37,12 @@ export class ExpenseController {
   // Helper method to extract tenantId consistently
   private getTenantId(req: Request): number | null {
     const user = req['user'];
-    
+
     // For global admins, return null (they can see all tenants)
     if (user?.type === 'global_admin') {
       return null;
     }
-    
+
     // For tenant users (admin/worker), return their tenantId
     if (user?.type === 'admin' || user?.type === 'worker') {
       const tenantId = user.tenantId;
@@ -45,7 +50,7 @@ export class ExpenseController {
         return Number(tenantId);
       }
     }
-    
+
     throw new BadRequestException('Invalid user or tenant information');
   }
 
@@ -54,16 +59,24 @@ export class ExpenseController {
   async CreateExpense(
     @Body() data: CreateExpenseDto,
     @UploadedFiles() files: Express.Multer.File[],
-    @Req() req: Request
+    @Req() req: Request,
   ) {
     const tenantId = this.getTenantId(req);
 
-    const findWorker = await this.workerService.findById(tenantId, data.workerId);
+    const findWorker = await this.workerService.findById(
+      tenantId,
+      data.workerId,
+    );
     if (!findWorker) {
       throw new NotFoundException(`worker with id ${data.workerId} not found!`);
     }
 
-    const createExpense = await this.expenseService.create(data, files, 'ADMIN', tenantId);
+    const createExpense = await this.expenseService.create(
+      data,
+      files,
+      'ADMIN',
+      tenantId,
+    );
 
     return {
       message: 'Expense is created successfully!',
@@ -74,7 +87,7 @@ export class ExpenseController {
   @Get()
   async GetExpenses(
     @Query() query: FilterExpensesQueryDto,
-    @Req() req: Request
+    @Req() req: Request,
   ) {
     const tenantId = this.getTenantId(req);
 
@@ -86,19 +99,40 @@ export class ExpenseController {
     };
   }
 
+@UseGuards(AuthGuard)
+@Get('my')
+async GetExpensesmy(@Req() req: Request) {
+  const user = req['user'];
+
+  // faqat worker uchun
+  if (user?.type !== 'worker') {
+    throw new BadRequestException('Only workers can access this endpoint');
+  }
+
+  const expenses = await this.expenseService.getMyExpenses(
+    user.id,
+    user.tenantId,
+  );
+
+  return {
+    message: 'My expenses retrieved successfully!',
+    ...expenses,
+  };
+}
+
   @Put(':id')
   @UseInterceptors(FilesInterceptor('files', 5))
   async UpdateExpense(
     @Param('id') id: number,
     @Body() body: any,
     @UploadedFiles() files: Express.Multer.File[],
-    @Req() req: Request // Add req parameter for tenant validation
+    @Req() req: Request, // Add req parameter for tenant validation
   ) {
     const tenantId = this.getTenantId(req);
 
     // Parse deleteFileIds from string to array if it exists
-    const deleteFileIds = body.deleteFileIds 
-      ? JSON.parse(body.deleteFileIds) 
+    const deleteFileIds = body.deleteFileIds
+      ? JSON.parse(body.deleteFileIds)
       : [];
 
     // Construct DTO manually
@@ -110,10 +144,14 @@ export class ExpenseController {
       action: body.action,
       date: body.date,
       deleteFileIds: deleteFileIds,
-      comment: body.comment
+      comment: body.comment,
     };
 
-    const updatedExpense = await this.expenseService.update(updateData, files, tenantId);
+    const updatedExpense = await this.expenseService.update(
+      updateData,
+      files,
+      tenantId,
+    );
     return {
       message: 'Expense is updated successfully!',
       info: updatedExpense,
@@ -123,7 +161,7 @@ export class ExpenseController {
   @Delete(':id')
   async DeleteExpense(
     @Param('id') id: number,
-    @Req() req: Request // Add req parameter for tenant validation
+    @Req() req: Request, // Add req parameter for tenant validation
   ) {
     const tenantId = this.getTenantId(req);
 

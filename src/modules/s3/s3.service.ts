@@ -14,13 +14,15 @@ import { Readable } from 'stream';
 export class S3Service {
   private s3Client: S3Client;
   private bucketName: string;
+  private region: string;
   
 
   constructor(private configService: ConfigService) {
     this.bucketName = this.configService.getOrThrow<string>('AWS_BUCKET_NAME');
+    this.region = this.configService.getOrThrow<string>('AWS_REGION');
     
     this.s3Client = new S3Client({
-      region: this.configService.getOrThrow<string>('AWS_REGION'),
+      region: this.region, 
       credentials: {
         accessKeyId: this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID'),
         secretAccessKey: this.configService.getOrThrow<string>('AWS_SECRET_ACCESS_KEY'),
@@ -35,7 +37,6 @@ export class S3Service {
   
   async getFileStream(url: string): Promise<Readable> {
     try {
-      // Extract key from URL, handling both full URLs and paths
       const key = this.extractKeyFromUrl(url);
       const command = new GetObjectCommand({
         Bucket: this.bucketName,
@@ -48,7 +49,6 @@ export class S3Service {
         throw new Error('Empty response from S3');
       }
       
-      // Convert to buffer and then to stream
       const chunks: Uint8Array[] = [];
       const stream = response.Body as Readable;
       
@@ -105,29 +105,19 @@ export class S3Service {
     contentType: string,
   ): Promise<string> {
     try {
-      // Upload the file
       const uploadCommand = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         Body: fileBuffer,
         ContentType: contentType,
+        ACL: 'public-read', 
       });
 
       await this.s3Client.send(uploadCommand);
       
-      // Generate a GET signed URL for viewing
-      const getCommand = new GetObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
-      });
+      const publicUrl = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
 
-      const signedUrl = await getSignedUrl(
-        this.s3Client,
-        getCommand,
-        { expiresIn: 7 * 24 * 60 * 60 } // 7 days
-      );
-
-      return signedUrl;
+      return publicUrl; 
     } catch (error) {
       throw new InternalServerErrorException(
         error instanceof Error ? error.message : 'Failed to upload file to S3'
@@ -145,6 +135,7 @@ export class S3Service {
       return await getSignedUrl(this.s3Client, command, {
         expiresIn: 7 * 24 * 60 * 60 // 7 days
       });
+      
     } catch (error) {
       throw new InternalServerErrorException(
         error instanceof Error ? error.message : 'Failed to generate signed URL'

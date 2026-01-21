@@ -180,7 +180,7 @@ export class BidPhotosService {
     taskItem: string,
     taskItemId?: number,
     metadata?: string | string[], // Add metadata parameter
-    photoType: PhotoType = PhotoType.BID
+    photoType: PhotoType = PhotoType.BID,
   ) {
     // Convert metadata to array if it's a single string
     const metadataArray = Array.isArray(metadata)
@@ -233,7 +233,7 @@ export class BidPhotosService {
           metadata: parsedMetadata, // Add metadata to the record
           order: { connect: { id: order.id } },
           tenant: { connect: { id: tenantId } },
-          photoType
+          photoType,
         },
       });
     });

@@ -1,6 +1,26 @@
-import { Controller, Put, Post, Delete, Body, Query, Get, Req, BadRequestException, UseGuards, UnauthorizedException, ParseIntPipe } from '@nestjs/common';
+import {
+  Controller,
+  Put,
+  Post,
+  Delete,
+  Body,
+  Query,
+  Get,
+  Req,
+  BadRequestException,
+  UseGuards,
+  UnauthorizedException,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { ShiftsService } from './shifts.service';
-import { DeleteShiftsDto, ClockOutDto, FinishJobDto, ClockInDto, AddShiftsDto, UpdateShiftsDto } from './shifts.dto';
+import {
+  DeleteShiftsDto,
+  ClockOutDto,
+  FinishJobDto,
+  ClockInDto,
+  AddShiftsDto,
+  UpdateShiftsDto,
+} from './shifts.dto';
 import { AuthGuard } from 'src/guards';
 
 @Controller('shifts')
@@ -39,15 +59,15 @@ export class ShiftsController {
   async shiftsUpdate(@Body() updateShiftsDto: UpdateShiftsDto) {
     return this.shiftsService.shiftsUpdate(updateShiftsDto);
   }
-  
-  @Post('addshifts') 
+
+  @Post('addshifts')
   async addShift(@Body() addShiftsDto: AddShiftsDto, @Req() req: Request) {
     const tenantId = addShiftsDto.tenantId || req['user']?.tenantId;
-    
+
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
-    
+
     return this.shiftsService.addShift(addShiftsDto);
   }
 
@@ -58,8 +78,8 @@ export class ShiftsController {
 
   @Get('current-shift')
   async getCurrentShift(
-    @Req() req: Request, 
-    @Query('workerId', new ParseIntPipe()) workerId: number
+    @Req() req: Request,
+    @Query('workerId', new ParseIntPipe()) workerId: number,
   ) {
     const tenantId = req['user']?.tenantId;
     if (!tenantId) {
@@ -73,13 +93,36 @@ export class ShiftsController {
     @Req() req: Request,
     @Query('workerId') workerId?: number,
     @Query('from') from?: number,
-    @Query('to') to?: number
+    @Query('to') to?: number,
   ) {
-    
     const tenantId = req['user']?.tenantId;
     if (!tenantId) {
-      throw new UnauthorizedException('User must be authenticated with a valid tenant');
+      throw new UnauthorizedException(
+        'User must be authenticated with a valid tenant',
+      );
     }
     return this.shiftsService.getShifts(workerId, from, to, tenantId);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('getshiftsmy')
+  async getShiftsmy(@Req() req: Request) {
+    const user = req['user'];
+
+    if (!user || user.type !== 'worker') {
+      throw new BadRequestException('Only workers can access this endpoint');
+    }
+
+    const tenantId = user.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const shifts = await this.shiftsService.getShiftsMy(user.id, tenantId);
+
+    return {
+      message: 'My shifts retrieved successfully!',
+      shifts,
+    };
   }
 }
