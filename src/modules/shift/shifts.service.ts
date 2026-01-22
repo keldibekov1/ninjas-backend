@@ -309,15 +309,21 @@ export class ShiftsService {
       whereClause.clockin_time = {};
 
       if (from) {
-        const fromDate = new Date(from * 1000);
+        const fromDate = new Date(Number(from) * 1000);
         fromDate.setHours(0, 0, 0, 0);
-        whereClause.clockin_time.gte = fromDate.getTime();
+
+        whereClause.clockin_time.gte = Math.floor(
+          fromDate.getTime() / 1000, // ✅ Float timestamp
+        );
       }
 
       if (to) {
-        const toDate = new Date(to * 1000);
+        const toDate = new Date(Number(to) * 1000);
         toDate.setHours(23, 59, 59, 999);
-        whereClause.clockin_time.lte = toDate.getTime();
+
+        whereClause.clockin_time.lte = Math.floor(
+          toDate.getTime() / 1000, // ✅ Float timestamp
+        );
       }
     }
 
