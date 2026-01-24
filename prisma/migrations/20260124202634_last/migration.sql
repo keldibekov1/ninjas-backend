@@ -1,8 +1,18 @@
 -- CreateEnum
-CREATE TYPE "PhotoType" AS ENUM ('BID', 'PROGRESS');
+DO $$
+BEGIN
+  CREATE TYPE "PhotoType" AS ENUM ('BID', 'PROGRESS');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- CreateEnum
-CREATE TYPE "TaskTimeStatus" AS ENUM ('RUNNING', 'PAUSED', 'COMPLETED');
+DO $$
+BEGIN
+  CREATE TYPE "TaskTimeStatus" AS ENUM ('RUNNING', 'PAUSED', 'COMPLETED');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 -- AlterTable
 ALTER TABLE "BidPhoto" ADD COLUMN     "photoType" "PhotoType" NOT NULL DEFAULT 'BID',
