@@ -7,7 +7,6 @@ import { CreateTaskDto, UpdateTaskDto } from './dto';
 export class TaskService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ✅ faqat RUNNING recordni topish (tenant+task+worker bo‘yicha)
   private getRunningRecord(tenantId: number, taskId: number, workerId: number) {
     return this.prisma.taskTimeRecord.findFirst({
       where: {
@@ -33,9 +32,6 @@ export class TaskService {
     });
   }
 
-  // =========================
-  // START
-  // =========================
   public async startTask(
     tenantId: number,
     task_id: number,
@@ -43,9 +39,7 @@ export class TaskService {
     start_time: number,
   ) {
     const running = await this.getRunningRecord(tenantId, task_id, worker_id);
-    if (running) {
-      throw new BadRequestException('Task already running');
-    }
+    if (running) throw new BadRequestException('Task already running');
 
     return this.prisma.taskTimeRecord.create({
       data: {
@@ -56,15 +50,12 @@ export class TaskService {
         status: 'RUNNING',
         pause_reason: null,
         end_time: null,
-        spent_time: null,
+        spent_time: 0,
       },
       include: { task: true },
     });
   }
 
-  // =========================
-  // PAUSE
-  // =========================
   public async pauseTask(
     tenantId: number,
     taskId: number,
@@ -73,16 +64,15 @@ export class TaskService {
     reason?: string,
   ) {
     const running = await this.getRunningRecord(tenantId, taskId, workerId);
-    if (!running) {
-      throw new BadRequestException('No running task to pause');
-    }
+    if (!running) throw new BadRequestException('No running task to pause');
 
     const end = Math.trunc(pause_time);
     const start = Math.trunc(running.start_time);
 
-    if (end < start) {
-      throw new BadRequestException('pause_time cannot be earlier than start_time');
-    }
+    if (end < start)
+      throw new BadRequestException(
+        'pause_time cannot be earlier than start_time',
+      );
 
     const spent = end - start;
 
@@ -97,9 +87,6 @@ export class TaskService {
     });
   }
 
-  // =========================
-  // RESUME
-  // =========================
   public async resumeTask(
     tenantId: number,
     taskId: number,
@@ -113,14 +100,15 @@ export class TaskService {
 
     const last = await this.getLastRecord(tenantId, taskId, workerId);
     if (!last) {
-      throw new BadRequestException('No previous record found. Use start first.');
+      throw new BadRequestException(
+        'No previous record found. Use start first.',
+      );
     }
 
     if (last.status === 'COMPLETED') {
       throw new BadRequestException('Task already completed');
     }
 
-    // last.status PAUSED bo‘lsa — ok
     return this.prisma.taskTimeRecord.create({
       data: {
         tenantId,
@@ -136,9 +124,6 @@ export class TaskService {
     });
   }
 
-  // =========================
-  // END (final finish)
-  // =========================
   public async endTask(
     tenantId: number,
     taskId: number,
@@ -146,33 +131,25 @@ export class TaskService {
     end_time: number,
   ) {
     const running = await this.getRunningRecord(tenantId, taskId, workerId);
-    if (!running) {
-      throw new BadRequestException('No running task found to end');
-    }
+    if (!running) throw new BadRequestException('No running task found to end');
 
     const end = Math.trunc(end_time);
     const start = Math.trunc(running.start_time);
-
-    if (end < start) {
-      throw new BadRequestException('end_time cannot be earlier than start_time');
-    }
+    if (end < start)
+      throw new BadRequestException(
+        'end_time cannot be earlier than start_time',
+      );
 
     const spent = end - start;
 
     await this.prisma.taskTimeRecord.update({
       where: { id: running.id },
-      data: {
-        end_time: end,
-        spent_time: spent,
-        status: 'COMPLETED',
-      },
+      data: { end_time: end, spent_time: spent, status: 'COMPLETED' },
     });
 
-    // ✅ taskni completed qilib qo‘yamiz
     return this.updateTaskCompletionStatus(taskId, true, workerId);
   }
 
-  // (ixtiyoriy) umumiy active record (lekin worker/tenant yo‘q)
   public getActiveTimeRecord(task_id: number) {
     return this.prisma.taskTimeRecord.findFirst({
       where: {
@@ -183,7 +160,6 @@ export class TaskService {
     });
   }
 
-  // ======= sizning qolgan methodlaringiz =======
   public async createCustom(data: CreateTaskDto, total: number) {
     return this.prisma.task.create({
       data: { ...data, total },

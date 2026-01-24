@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider          = "postgresql"
-  url               = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
   // shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
@@ -27,11 +27,11 @@ model Crew {
   @@unique([id, tenantId])
   @@map("crews")
 }
+
 model Tst {
   id   Int    @id @default(autoincrement())
   name String
 }
-
 
 model CrewMember {
   id       Int      @id @default(autoincrement())
@@ -388,15 +388,15 @@ model Task {
 }
 
 model BidPhoto {
-  id         Int    @id @default(autoincrement())
-  tenantId   Int 
+  id         Int       @id @default(autoincrement())
+  tenantId   Int
   url        String
   filename   String
   taskItem   String
   taskItemId Int?
-  orderId  Int
-  metadata Json?
-  photoType    PhotoType @default(BID)
+  orderId    Int
+  metadata   Json?
+  photoType  PhotoType @default(BID)
 
   order  Order  @relation(fields: [orderId], references: [id])
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -408,10 +408,9 @@ model BidPhoto {
   @@index([orderId])
 }
 
-
 enum PhotoType {
-  BID         
-  PROGRESS     
+  BID
+  PROGRESS
 }
 
 model FolderDoc {
@@ -455,14 +454,14 @@ enum TaskTimeStatus {
 }
 
 model TaskTimeRecord {
-  id         Int    @id @default(autoincrement())
-  tenantId   Int
-  task_id    Int
-  worker_id  Int?
-  start_time Float
-  end_time   Float?
-  spent_time Float?
-  status      TaskTimeStatus @default(RUNNING)
+  id           Int            @id @default(autoincrement())
+  tenantId     Int
+  task_id      Int
+  worker_id    Int?
+  start_time   Float
+  end_time     Float?
+  spent_time   Float?
+  status       TaskTimeStatus @default(RUNNING)
   pause_reason String?
 
   createdAt DateTime @default(now())

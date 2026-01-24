@@ -1,5 +1,11 @@
 
-CREATE EXTENSION IF NOT EXISTS postgis;
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS postgis;
+EXCEPTION
+  WHEN undefined_file THEN
+    RAISE NOTICE 'PostGIS not installed, skipping extension creation.';
+END $$;
 -- CreateEnum
 CREATE TYPE "GlobalRoleEnum" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'SUPPORT');
 
