@@ -448,14 +448,22 @@ model FileDoc {
   @@unique([id, tenantId])
 }
 
+enum TaskTimeStatus {
+  RUNNING
+  PAUSED
+  COMPLETED
+}
+
 model TaskTimeRecord {
   id         Int    @id @default(autoincrement())
-  tenantId   Int // New field
+  tenantId   Int
   task_id    Int
   worker_id  Int?
   start_time Float
   end_time   Float?
   spent_time Float?
+  status      TaskTimeStatus @default(RUNNING)
+  pause_reason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -465,6 +473,7 @@ model TaskTimeRecord {
   tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([id, tenantId])
+  @@index([tenantId, task_id, worker_id])
 }
 
 model ShiftTimeRecord {

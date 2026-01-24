@@ -1,80 +1,192 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaskType } from './types';
 import { CreateTaskDto, UpdateTaskDto } from './dto';
-import { Tenant } from 'firebase-admin/lib/auth/tenant';
 
 @Injectable()
 export class TaskService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ✅ faqat RUNNING recordni topish (tenant+task+worker bo‘yicha)
+  private getRunningRecord(tenantId: number, taskId: number, workerId: number) {
+    return this.prisma.taskTimeRecord.findFirst({
+      where: {
+        tenantId,
+        task_id: taskId,
+        worker_id: workerId,
+        status: 'RUNNING',
+        end_time: null,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
+  // ✅ oxirgi record (resume uchun)
+  private getLastRecord(tenantId: number, taskId: number, workerId: number) {
+    return this.prisma.taskTimeRecord.findFirst({
+      where: {
+        tenantId,
+        task_id: taskId,
+        worker_id: workerId,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // =========================
+  // START
+  // =========================
   public async startTask(
     tenantId: number,
     task_id: number,
     worker_id: number,
-    start_time: number
+    start_time: number,
   ) {
-    // Create a new time record with only start time
+    const running = await this.getRunningRecord(tenantId, task_id, worker_id);
+    if (running) {
+      throw new BadRequestException('Task already running');
+    }
+
     return this.prisma.taskTimeRecord.create({
       data: {
         tenantId,
         task_id,
         worker_id,
-        start_time,
-        // end_time and spent_time will be null until task is ended
+        start_time: Math.trunc(start_time),
+        status: 'RUNNING',
+        pause_reason: null,
+        end_time: null,
+        spent_time: null,
       },
-      include: {
-        task: true
-      }
+      include: { task: true },
     });
   }
 
-  public async endTask(
-    task_id: number,
-    worker_id: number,
-    end_time: number,
-    spent_time: number
+  // =========================
+  // PAUSE
+  // =========================
+  public async pauseTask(
+    tenantId: number,
+    taskId: number,
+    workerId: number,
+    pause_time: number,
+    reason?: string,
   ) {
-    // Update the existing time record with end time and spent time
-    await this.prisma.taskTimeRecord.updateMany({
-      where: {
-        task_id,
-        worker_id,
-        end_time: null // Only update the active (unfinished) record
-      },
-      data: {
-        end_time,
-        spent_time
-      }
-    });
+    const running = await this.getRunningRecord(tenantId, taskId, workerId);
+    if (!running) {
+      throw new BadRequestException('No running task to pause');
+    }
 
-    // Update task completion status
-    return this.updateTaskCompletionStatus(
-      task_id,
-      true,
-      worker_id
-    );
+    const end = Math.trunc(pause_time);
+    const start = Math.trunc(running.start_time);
+
+    if (end < start) {
+      throw new BadRequestException('pause_time cannot be earlier than start_time');
+    }
+
+    const spent = end - start;
+
+    return this.prisma.taskTimeRecord.update({
+      where: { id: running.id },
+      data: {
+        end_time: end,
+        spent_time: spent,
+        status: 'PAUSED',
+        pause_reason: reason ?? null,
+      },
+    });
   }
 
+  // =========================
+  // RESUME
+  // =========================
+  public async resumeTask(
+    tenantId: number,
+    taskId: number,
+    workerId: number,
+    start_time: number,
+  ) {
+    const running = await this.getRunningRecord(tenantId, taskId, workerId);
+    if (running) {
+      throw new BadRequestException('Task already running');
+    }
+
+    const last = await this.getLastRecord(tenantId, taskId, workerId);
+    if (!last) {
+      throw new BadRequestException('No previous record found. Use start first.');
+    }
+
+    if (last.status === 'COMPLETED') {
+      throw new BadRequestException('Task already completed');
+    }
+
+    // last.status PAUSED bo‘lsa — ok
+    return this.prisma.taskTimeRecord.create({
+      data: {
+        tenantId,
+        task_id: taskId,
+        worker_id: workerId,
+        start_time: Math.trunc(start_time),
+        status: 'RUNNING',
+        pause_reason: null,
+        end_time: null,
+        spent_time: null,
+      },
+      include: { task: true },
+    });
+  }
+
+  // =========================
+  // END (final finish)
+  // =========================
+  public async endTask(
+    tenantId: number,
+    taskId: number,
+    workerId: number,
+    end_time: number,
+  ) {
+    const running = await this.getRunningRecord(tenantId, taskId, workerId);
+    if (!running) {
+      throw new BadRequestException('No running task found to end');
+    }
+
+    const end = Math.trunc(end_time);
+    const start = Math.trunc(running.start_time);
+
+    if (end < start) {
+      throw new BadRequestException('end_time cannot be earlier than start_time');
+    }
+
+    const spent = end - start;
+
+    await this.prisma.taskTimeRecord.update({
+      where: { id: running.id },
+      data: {
+        end_time: end,
+        spent_time: spent,
+        status: 'COMPLETED',
+      },
+    });
+
+    // ✅ taskni completed qilib qo‘yamiz
+    return this.updateTaskCompletionStatus(taskId, true, workerId);
+  }
+
+  // (ixtiyoriy) umumiy active record (lekin worker/tenant yo‘q)
   public getActiveTimeRecord(task_id: number) {
     return this.prisma.taskTimeRecord.findFirst({
       where: {
         task_id,
-        end_time: null // Find the record that hasn't been ended yet
-      }
+        end_time: null,
+      },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  public async createCustom(
-    data: CreateTaskDto, 
-    total: number
-  ) {
+  // ======= sizning qolgan methodlaringiz =======
+  public async createCustom(data: CreateTaskDto, total: number) {
     return this.prisma.task.create({
-      data: {
-        ...data,
-        total
-      },
+      data: { ...data, total },
     });
   }
 
@@ -108,26 +220,19 @@ export class TaskService {
         start_time,
         end_time,
         spent_time,
+        status: 'COMPLETED',
       },
-      // Optional: include related data in the response
-      include: {
-        task: true      },
+      include: { task: true },
     });
   }
 
   public findById(id: number) {
-    return this.prisma.task.findUnique({
-      where: {
-        id,
-      },
-    });
+    return this.prisma.task.findUnique({ where: { id } });
   }
 
   public getAll() {
     return this.prisma.task.findMany({
-      include: {
-        TaskTimeRecords: true,
-      },
+      include: { TaskTimeRecords: true },
     });
   }
 
@@ -140,18 +245,12 @@ export class TaskService {
     });
     const all = await this.prisma.task.count({ where: { report_id } });
 
-    return {
-      completed,
-      uncompleted,
-      all,
-    };
+    return { completed, uncompleted, all };
   }
 
   public update(taskId: number, data: UpdateTaskDto) {
     return this.prisma.task.update({
-      where: {
-        id: taskId,
-      },
+      where: { id: taskId },
       data,
     });
   }
@@ -164,38 +263,25 @@ export class TaskService {
     const data: any = {
       isCompleted,
       completedWorker: workerId,
-      completedDate: null, // Reset completedDate when task is uncompleted
+      completedDate: null,
     };
 
-    if (isCompleted) {
-      // Set current UTC time when task is completed
-      data.completedDate = new Date();
-    }
+    if (isCompleted) data.completedDate = new Date();
 
     return this.prisma.task.update({
-      where: {
-        id: taskId,
-      },
+      where: { id: taskId },
       data,
     });
   }
 
   public getLastTaskTimeRecordByWorkerId(worker_id: number) {
     return this.prisma.taskTimeRecord.findFirst({
-      where: {
-        worker_id,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      where: { worker_id },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   public deleteTask(taskId: number) {
-    return this.prisma.task.delete({
-      where: {
-        id: taskId,
-      },
-    });
+    return this.prisma.task.delete({ where: { id: taskId } });
   }
 }
