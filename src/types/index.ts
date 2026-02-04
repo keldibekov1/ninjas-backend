@@ -6,7 +6,6 @@ export type JwtPayloadType = {
     tenantId?: number;
     name: string | null;
     username: string | null;
-    password: string | null;
     role: RoleEnum | null;
     createdAt: string;
     updatedAt: string;
