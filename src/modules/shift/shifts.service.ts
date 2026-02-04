@@ -90,91 +90,143 @@ export class ShiftsService {
   async clockIn({
     tenantId,
     workerId,
-    clockin_time,
+    clientRequestId,
+    deviceId,
   }: ClockInDto & { tenantId: number }) {
-    // Instead of duplicating the date check logic, use getCurrentShift
-    const currentShift = await this.getCurrentShift(workerId, tenantId);
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.shiftAction.findUnique({
+        where: { tenantId_clientRequestId: { tenantId, clientRequestId } },
+        include: { shift: true },
+      });
+      if (existing) return existing.shift;
 
-    if (currentShift.hasShift) {
-      if (currentShift.shiftStatus === 'completed') {
-        throw new BadRequestException(
-          'Worker has already completed a shift today',
-        );
+      const currentShift = await this.getCurrentShift(workerId, tenantId);
+      if (currentShift.hasShift) {
+        throw new BadRequestException('Worker already has an active shift');
       }
-      throw new BadRequestException('Worker already has an active shift');
-    }
 
-    return this.prisma.shiftTimeRecord.create({
-      data: {
-        worker: {
-          connect: { id: workerId },
+      const now = Math.floor(Date.now() / 1000);
+
+      const shift = await tx.shiftTimeRecord.create({
+        data: {
+          worker: { connect: { id: workerId } },
+          tenant: { connect: { id: tenantId } },
+          clockin_time: now,
+          finishjob_time: 0,
+          clockout_time: 0,
         },
-        tenant: {
-          connect: { id: tenantId },
+      });
+
+      await tx.shiftAction.create({
+        data: {
+          tenantId,
+          workerId,
+          shiftId: shift.id,
+          type: 'CLOCK_IN',
+          clientRequestId,
+          deviceId,
         },
-        clockin_time: Math.trunc(clockin_time),
-        finishjob_time: 0,
-        clockout_time: 0,
-      },
+      });
+
+      return shift;
     });
   }
 
-  // Rest of the service methods remain the same...
   async finishJob(finishJobDto: FinishJobDto, tenantId: number) {
-    const { id, finishjob_time } = finishJobDto;
+    const { id: shiftId, clientRequestId, deviceId } = finishJobDto;
 
-    const shift = await this.prisma.shiftTimeRecord.findFirst({
-      where: {
-        id,
-        tenantId,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.shiftAction.findUnique({
+        where: { tenantId_clientRequestId: { tenantId, clientRequestId } },
+        include: { shift: true },
+      });
+      if (existing) return existing.shift;
 
-    if (!shift) {
-      throw new NotFoundException(
-        `Shift with ID ${id} not found or unauthorized`,
-      );
-    }
+      const shift = await tx.shiftTimeRecord.findFirst({
+        where: { id: shiftId, tenantId },
+      });
 
-    return this.prisma.shiftTimeRecord.update({
-      where: {
-        id_tenantId: {
-          id,
+      if (!shift) {
+        throw new NotFoundException(
+          `Shift with ID ${shiftId} not found or unauthorized`,
+        );
+      }
+
+      if (shift.clockout_time && shift.clockout_time > 0) {
+        throw new BadRequestException('Shift already clocked out');
+      }
+      if (shift.finishjob_time && shift.finishjob_time > 0) {
+        throw new BadRequestException('Job already finished');
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+
+      const updated = await tx.shiftTimeRecord.update({
+        where: { id_tenantId: { id: shiftId, tenantId } },
+        data: { finishjob_time: now },
+      });
+
+      await tx.shiftAction.create({
+        data: {
           tenantId,
+          workerId: shift.worker_id,
+          shiftId,
+          type: 'FINISH_JOB',
+          clientRequestId,
+          deviceId,
         },
-      },
-      data: {
-        finishjob_time: Math.trunc(finishjob_time),
-      },
+      });
+
+      return updated;
     });
   }
 
   async clockOut(clockOutDto: ClockOutDto, tenantId: number) {
-    const { id, clockout_time } = clockOutDto;
+    const { id: shiftId, clientRequestId, deviceId } = clockOutDto;
 
-    const shift = await this.prisma.shiftTimeRecord.findFirst({
-      where: {
-        id,
-        tenantId,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.shiftAction.findUnique({
+        where: { tenantId_clientRequestId: { tenantId, clientRequestId } },
+        include: { shift: true },
+      });
+      if (existing) return existing.shift;
 
-    if (!shift) {
-      throw new NotFoundException(
-        `Shift with ID ${id} not found or unauthorized`,
-      );
-    }
+      const shift = await tx.shiftTimeRecord.findFirst({
+        where: { id: shiftId, tenantId },
+      });
 
-    return this.prisma.shiftTimeRecord.update({
-      where: {
-        id_tenantId: {
-          id,
+      if (!shift) {
+        throw new NotFoundException(
+          `Shift with ID ${shiftId} not found or unauthorized`,
+        );
+      }
+
+      if (shift.clockout_time && shift.clockout_time > 0) {
+        throw new BadRequestException('Shift already clocked out');
+      }
+      if (!shift.clockin_time || shift.clockin_time <= 0) {
+        throw new BadRequestException('Shift is not clocked in');
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+
+      const updated = await tx.shiftTimeRecord.update({
+        where: { id_tenantId: { id: shiftId, tenantId } },
+        data: { clockout_time: now },
+      });
+
+      await tx.shiftAction.create({
+        data: {
           tenantId,
+          workerId: shift.worker_id,
+          shiftId,
+          type: 'CLOCK_OUT',
+          clientRequestId,
+          deviceId,
         },
-      },
-      data: {
-        clockout_time: Math.trunc(clockout_time),
-      },
+      });
+
+      return updated;
     });
   }
 
@@ -255,12 +307,13 @@ export class ShiftsService {
   async checkIfRecordExistsForToday(workerId: number): Promise<boolean> {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const todayTimestamp = todayStart.getTime();
+
+    const todayTimestampSec = Math.floor(todayStart.getTime() / 1000);
 
     const record = await this.prisma.shiftTimeRecord.findFirst({
       where: {
         worker_id: workerId,
-        clockin_time: { gte: todayTimestamp },
+        clockin_time: { gte: todayTimestampSec },
       },
     });
 

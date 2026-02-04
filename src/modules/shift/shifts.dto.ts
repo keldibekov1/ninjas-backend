@@ -1,33 +1,63 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 
 export class ClockInDto {
+  @ApiProperty()
   @IsNumber()
   workerId: number;
 
-  @IsNumber()
-  clockin_time: number;
+  @ApiProperty()
+  @IsUUID()
+  clientRequestId: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 export class FinishJobDto {
+  @ApiProperty()
   @IsNumber()
   id: number;
 
-  @IsNumber()
-  finishjob_time: number;
+  @ApiProperty()
+  @IsUUID()
+  clientRequestId: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 export class ClockOutDto {
+  @ApiProperty()
   @IsNumber()
   id: number;
 
-  @IsNumber()
-  clockout_time: number;
+  @ApiProperty()
+  @IsUUID()
+  clientRequestId: string;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 export class DeleteShiftsDto {
-  @IsInt() 
+  @IsInt()
   @IsNotEmpty()
-  id: number; 
+  id: number;
 }
 
 export class UpdateShiftsDto {

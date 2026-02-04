@@ -191,13 +191,14 @@ model BouncieConfig {
 }
 
 model Tenant {
-  id        Int          @id @default(autoincrement())
-  name      String
-  domain    String       @unique
-  plan      PlanType     @default(BASIC)
-  status    TenantStatus @default(ACTIVE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id           Int           @id @default(autoincrement())
+  name         String
+  domain       String        @unique
+  plan         PlanType      @default(BASIC)
+  status       TenantStatus  @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  shiftActions ShiftAction[] // ✅ SHUNI QO‘SH
 
   //Bouncie Config
   bouncieConfig BouncieConfig?
@@ -432,7 +433,7 @@ model FolderDoc {
 
 model FileDoc {
   id       Int     @id @default(autoincrement())
-  tenantId Int // New field
+  tenantId Int
   name     String?
   filename String
   url      String
@@ -477,7 +478,7 @@ model TaskTimeRecord {
 
 model ShiftTimeRecord {
   id             Int      @id @default(autoincrement())
-  tenantId       Int // New field
+  tenantId       Int
   worker_id      Int
   clockin_time   Float
   finishjob_time Float?
@@ -487,10 +488,37 @@ model ShiftTimeRecord {
   worker Worker @relation(fields: [worker_id], references: [id])
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  actions ShiftAction[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([id, tenantId])
+}
+
+enum ShiftActionType {
+  CLOCK_IN
+  FINISH_JOB
+  CLOCK_OUT
+}
+
+model ShiftAction {
+  id              Int             @id @default(autoincrement())
+  tenantId        Int
+  workerId        Int
+  shiftId         Int
+  type            ShiftActionType
+  clientRequestId String
+  deviceId        String?
+
+  recordedAt DateTime @default(now())
+
+  shift  ShiftTimeRecord @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, clientRequestId]) // ✅ idempotency key
+  @@index([shiftId])
+  @@index([workerId])
 }
 
 model Taskitems {
@@ -554,7 +582,7 @@ model ExpenseCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([name, tenantId]) // Category name should be unique within a tenant
+  @@unique([name, tenantId])
   @@unique([id, tenantId])
 }
 
