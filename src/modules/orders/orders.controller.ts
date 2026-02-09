@@ -253,136 +253,197 @@ export class OrdersController {
     }
   }
 
-@Post('sync')
-@HttpCode(HttpStatus.OK)
-@UseGuards(AuthGuard)
-async SyncOrders(@Req() req: Request) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) throw new BadRequestException('Tenant ID is required');
+  @Post('sync')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard)
+  async SyncOrders(@Req() req: Request) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
 
-  const startTime = new Date();
+    const startTime = new Date();
 
-  const beforeCount = await this.ordersService.countByTenant(tenantId);
-  console.log('DB orders before:', beforeCount);
+    const PrimaryOrdersAPI = await this.apiPpwService.getAll(tenantId);
+    const all_orders_primary: PrimaryOrdersListType = PrimaryOrdersAPI.data;
 
-  const PrimaryOrdersAPI = await this.apiPpwService.getAll(tenantId);
-  const all_orders_primary: PrimaryOrdersListType = PrimaryOrdersAPI.data;
+    const tasksFromDB = await this.taskService.getAll();
 
-  const allAny = all_orders_primary as any;
-
-  if (!allAny?.success || allAny?.error || allAny?.auth_error) {
-    throw new BadRequestException(allAny?.return_error_msg || 'PPW getAll failed');
-  }
-
-  const tasksFromDB = await this.taskService.getAll();
-
-  let createdCount = 0;
-  let updatedCount = 0;
-  let errorCount = 0;
-
-  // ✅ MUHIM: result_data ni any’dan oling
-  const list: any[] = allAny?.result_data || [];
-  console.log('PPW orders count:', list.length);
-
-  for (const workOrder of list) {
-    try {
-      console.log('SYNC report_id:', workOrder.report_id);
-
+    for (const workOrder of all_orders_primary.result_data) {
       const singleOrderApi = await this.apiPpwService.getOne(
         tenantId,
         workOrder.report_id,
       );
-
       const primaryOrder: SingleOrderType = singleOrderApi.data;
-      const primaryAny = primaryOrder as any;
 
-      if (!primaryAny?.success || primaryAny?.error || primaryAny?.auth_error) {
-        throw new Error(primaryAny?.return_error_msg || 'PPW getOne failed');
+      // Fetch coordinates if address, city, and state are available
+      let coordinates = null;
+      if (
+        primaryOrder.result_data.address &&
+        primaryOrder.result_data.city &&
+        primaryOrder.result_data.state
+      ) {
+        coordinates = await getCoordinates(
+          primaryOrder.result_data.address,
+          primaryOrder.result_data.city,
+          primaryOrder.result_data.state,
+        );
+
+        await delay(1000); // 1 second delay between requests
       }
 
-      // ✅ details ni any qilib olamiz (type xatolar bo‘lmasin)
-      const details: any = primaryAny.result_data;
-      workOrder.details = details;
+      // delete unnecessary fields
+      delete primaryOrder.remote_site_id;
+      delete primaryOrder.success;
+      delete primaryOrder.return_error_msg;
 
-      // Coordinates
-      let coordinates: string | null = null;
-      if (details?.address && details?.city && details?.state) {
-        try {
-          coordinates = await getCoordinates(details.address, details.city, details.state);
-        } catch (e) {
-          console.log('getCoordinates error:', details.address, details.city, details.state);
-        }
-        await delay(1000);
-      }
+      // assign single order data to details field
+      workOrder.details = primaryOrder.result_data;
 
       const findByReportId = await this.ordersService.findByReportId(
         tenantId,
         workOrder.report_id,
       );
-      console.log('exists:', !!findByReportId);
-
-      // ✅ key_values type fix
-      const keyValues: Record<string, any> = details?.key_values || {};
-
-      const payload = {
-        address: details?.address ?? null,
-        city: details?.city ?? null,
-        zip: details?.zip ?? null,
-        coordinates: coordinates ?? (findByReportId?.coordinates ?? null),
-
-        broker_company: details?.broker_company ?? null,
-        broker_email: details?.broker_email ?? null,
-
-        autoimport_client_orig: keyValues.autoimport_client_orig ?? null,
-        autoimport_userid: keyValues.autoimport_userid ?? null,
-        bg_checkin_provider: keyValues.bg_checkin_provider ?? null,
-
-        broker_name: details?.broker_name ?? null,
-        broker_phone: details?.broker_phone ?? null,
-        comments: details?.comments ?? null,
-        client_company_alias: details?.client_company_alias ?? null,
-        cust_text: String(details?.cust_text ?? ''),
-        date_due: details?.date_due ?? null,
-        has_foh: details?.has_foh ?? null,
-        date_received: details?.date_received ?? null,
-        import_user_id: details?.import_user_id ?? null,
-        key_code: details?.key_code ?? null,
-        loan_number: details?.loan_number ?? null,
-        loan_type_other: details?.loan_type_other ?? null,
-        lock_code: details?.lock_code ?? null,
-        lot_size: details?.lot_size ?? null,
-        mcs_woid: keyValues.mcs_woid ?? null,
-        mortgage_name: details?.mortgage_name ?? null,
-
-        org_wo_num: workOrder?.org_wo_num ?? null,
-        start_date: details?.start_date ?? null,
-        state: details?.state ?? null,
-        ppw_report_id: details?.ppw_report_id ?? null,
-
-        wo_number: workOrder?.wo_number ?? details?.wo_number ?? null,
-        wo_number_orig: keyValues.wo_number_orig ?? null,
-        wo_status: details?.wo_status ?? workOrder?.wo_status ?? null,
-        wo_photo_ts_format: keyValues.wo_photo_ts_format ?? null,
-        work_type_alias: details?.work_type_alias ?? null,
-
-        tenantId,
-      };
 
       if (findByReportId) {
-        await this.ordersService.update(workOrder.report_id, tenantId, payload as any);
-        updatedCount++;
+        // update work order details - Fixed parameter order here
+        await this.ordersService.update(workOrder.report_id, tenantId, {
+          address: workOrder.details.address,
+          city: workOrder.details.city,
+          zip: workOrder.details.zip,
+          coordinates: coordinates || findByReportId.coordinates,
+          broker_company: workOrder.details.broker_company,
+          broker_email: workOrder.details.broker_email,
+          autoimport_client_orig:
+            workOrder.details.key_values.autoimport_client_orig,
+          autoimport_userid: workOrder.details.key_values.autoimport_userid,
+          bg_checkin_provider: workOrder.details.key_values.bg_checkin_provider,
+          broker_name: workOrder.details.broker_name,
+          broker_phone: workOrder.details.broker_phone,
+          comments: workOrder.details.comments,
+          client_company_alias: workOrder.details.client_company_alias,
+          cust_text: String(workOrder.details.cust_text),
+          date_due: workOrder.details.date_due,
+          has_foh: workOrder.details.has_foh,
+          date_received: workOrder.details.date_received,
+          import_user_id: workOrder.details.import_user_id,
+          key_code: workOrder.details.key_code,
+          loan_number: workOrder.details.loan_number,
+          loan_type_other: workOrder.details.loan_type_other,
+          lock_code: workOrder.details.lock_code,
+          lot_size: workOrder.details.lot_size,
+          mcs_woid: workOrder.details.key_values.mcs_woid,
+          mortgage_name: workOrder.details.mortgage_name,
+          org_wo_num: workOrder.org_wo_num,
+          start_date: workOrder.details.start_date,
+          state: workOrder.details.state,
+          ppw_report_id: workOrder.details.ppw_report_id,
+          wo_number: workOrder.wo_number,
+          wo_number_orig: workOrder.details.key_values.wo_number_orig,
+          wo_status: workOrder.details.wo_status,
+          wo_photo_ts_format: workOrder.details.key_values.wo_photo_ts_format,
+          work_type_alias: workOrder.details.work_type_alias,
+          tenantId,
+        });
+
+        // update task details
+        for (const line_item_task of workOrder.details.line_items) {
+          const isExistedTask = tasksFromDB.find((item) => {
+            return (
+              item.report_id === workOrder.report_id &&
+              item.desc === line_item_task.desc
+            );
+          });
+
+          if (!isExistedTask) {
+            const possibleDataTask = tasksFromDB.find((item) => {
+              item.desc = item.desc.replace(/\s/g, '').toLowerCase();
+
+              return (
+                item.report_id === workOrder.report_id &&
+                isSimilar(
+                  item.desc,
+                  findMostSuitableDescription(
+                    line_item_task.desc,
+                    tasksFromDB
+                      .filter((task) => task.report_id === workOrder.report_id)
+                      .map((task) => task.desc),
+                  )
+                    .replace(/\s/g, '')
+                    .toLowerCase(),
+                )
+              );
+            });
+
+            if (possibleDataTask) {
+              await this.taskService.update(possibleDataTask.id, {
+                desc: line_item_task.desc,
+                add: line_item_task.add,
+                qty: line_item_task.qty,
+                price: line_item_task.price,
+                total: line_item_task.total,
+                tenantId,
+              });
+            }
+          } else {
+            // just update info if existed (easy, all complex logic is above, if not exist!)
+            await this.taskService.update(isExistedTask.id, {
+              desc: line_item_task.desc,
+              add: line_item_task.add,
+              qty: line_item_task.qty,
+              price: line_item_task.price,
+              total: line_item_task.total,
+              tenantId,
+            });
+          }
+        }
       } else {
+        // create work orders
         await this.ordersService.create({
           report_id: workOrder.report_id,
-          ...payload,
-        } as any);
-        createdCount++;
+          address: workOrder.details?.address,
+          city: workOrder.details?.city,
+          zip: workOrder.details?.zip,
+          coordinates: coordinates,
+          broker_company: workOrder.details?.broker_company,
+          broker_email: workOrder.details?.broker_email,
+          autoimport_client_orig:
+            workOrder.details?.key_values.autoimport_client_orig,
+          autoimport_userid: workOrder.details?.key_values.autoimport_userid,
+          bg_checkin_provider: workOrder.details.key_values.bg_checkin_provider,
+          broker_name: workOrder.details.broker_name,
+          broker_phone: workOrder.details.broker_phone,
+          comments: workOrder.details.comments,
+          client_company_alias: workOrder.details.client_company_alias,
+          cust_text: String(workOrder.details.cust_text),
+          date_due: workOrder.details.date_due,
+          has_foh: workOrder.details.has_foh,
+          date_received: workOrder.details.date_received,
+          import_user_id: workOrder.details.import_user_id,
+          key_code: workOrder.details.key_code,
+          loan_number: workOrder.details.loan_number,
+          loan_type_other: workOrder.details.loan_type_other,
+          lock_code: workOrder.details.lock_code,
+          lot_size: workOrder.details.lot_size,
+          mcs_woid: workOrder.details.key_values.mcs_woid,
+          mortgage_name: workOrder.details.mortgage_name,
+          org_wo_num: workOrder.org_wo_num,
+          start_date: workOrder.details.start_date,
+          state: workOrder.details.state,
+          ppw_report_id: workOrder.details.ppw_report_id,
+          wo_number: workOrder.wo_number,
+          wo_number_orig: workOrder.details.key_values.wo_number_orig,
+          wo_status: workOrder.details.wo_status,
+          wo_photo_ts_format: workOrder.details.key_values.wo_photo_ts_format,
+          work_type_alias: workOrder.details.work_type_alias,
+          tenantId,
+        });
 
-        // create tasks related to report_id
+        // create task related to report_id
         await this.taskService.create(
           tenantId,
           workOrder.report_id,
-          details?.line_items ?? [],
+          workOrder.details.line_items,
         );
 
         // create job notes
@@ -390,11 +451,10 @@ async SyncOrders(@Req() req: Request) {
           tenantId,
           workOrder.report_id,
         );
+        const notesData: PrimaryJobNotesType[] =
+          jobNotesPrimary?.data?.result_data;
 
-        const jobNotesAny = jobNotesPrimary?.data as any;
-        const notesData: any[] = jobNotesAny?.result_data ?? [];
-
-        if (notesData.length) {
+        if (notesData.length !== 0) {
           for (const note of notesData) {
             await this.jobNotesService.create({
               report_id: workOrder.report_id,
@@ -404,99 +464,49 @@ async SyncOrders(@Req() req: Request) {
           }
         }
       }
+    }
 
-      // tasks update
-      for (const line_item_task of (details?.line_items ?? []) as any[]) {
-        const isExistedTask = tasksFromDB.find(
-          (item) =>
-            item.report_id === workOrder.report_id &&
-            item.desc === line_item_task.desc,
-        );
+    // Refresh coordinates for existing orders with missing data
+    const existingOrdersWithoutCoordinates =
+      await this.ordersService.getOrdersWithoutCoordinates(tenantId);
 
-        if (!isExistedTask) {
-          const possibleDataTask = tasksFromDB.find((item) => {
-            const normalized = (item.desc || '').replace(/\s/g, '').toLowerCase();
+    for (const order of existingOrdersWithoutCoordinates) {
+      const { address, city, state } = order;
 
-            const best = findMostSuitableDescription(
-              line_item_task.desc,
-              tasksFromDB
-                .filter((t) => t.report_id === workOrder.report_id)
-                .map((t) => t.desc),
-            )
-              .replace(/\s/g, '')
-              .toLowerCase();
+      try {
+        const coordinates = await getCoordinates(address, city, state);
 
-            return item.report_id === workOrder.report_id && isSimilar(normalized, best);
-          });
-
-          if (possibleDataTask) {
-            await this.taskService.update(possibleDataTask.id, {
-              desc: line_item_task.desc,
-              add: line_item_task.add,
-              qty: line_item_task.qty,
-              price: line_item_task.price,
-              total: line_item_task.total,
-              tenantId,
-            });
-          }
-        } else {
-          await this.taskService.update(isExistedTask.id, {
-            desc: line_item_task.desc,
-            add: line_item_task.add,
-            qty: line_item_task.qty,
-            price: line_item_task.price,
-            total: line_item_task.total,
+        if (coordinates) {
+          await this.ordersService.updateCoordinates(
+            order.report_id,
             tenantId,
-          });
+            coordinates,
+          );
         }
+      } catch (error) {
+        console.error(
+          `Error updating coordinates for order ${order.report_id}:`,
+          error,
+        );
       }
-    } catch (e: any) {
-      errorCount++;
-      console.error('SYNC ERROR report_id:', workOrder?.report_id, e?.message);
+
+      await delay(1000); // Respect rate limits
     }
+    // Calculate the elapsed time
+    const endTime = new Date();
+    const elapsedTime = endTime.getTime() - startTime.getTime();
+
+    // Format the elapsed time
+    const formattedTime = formatTime(elapsedTime);
+
+    // update sync log time
+    await this.ordersService.syncLog(tenantId, formattedTime);
+
+    return {
+      message: 'Orders is synced successfully!',
+      spentTime: formattedTime,
+    };
   }
-
-  // Refresh coordinates for existing orders with missing data
-  const existingOrdersWithoutCoordinates =
-    await this.ordersService.getOrdersWithoutCoordinates(tenantId);
-
-  for (const order of existingOrdersWithoutCoordinates) {
-    const { address, city, state } = order;
-
-    try {
-      const coordinates = await getCoordinates(address, city, state);
-      if (coordinates) {
-        await this.ordersService.updateCoordinates(order.report_id, tenantId, coordinates);
-      }
-    } catch (error) {
-      console.error(`Error updating coordinates for order ${order.report_id}:`, error);
-    }
-
-    await delay(1000);
-  }
-
-  const endTime = new Date();
-  const elapsedTime = endTime.getTime() - startTime.getTime();
-  const formattedTime = formatTime(elapsedTime);
-
-  await this.ordersService.syncLog(tenantId, formattedTime);
-
-  const afterCount = await this.ordersService.countByTenant(tenantId);
-  console.log('DB orders after:', afterCount);
-
-  return {
-    message: 'Orders is synced successfully!',
-    spentTime: formattedTime,
-    stats: {
-      beforeCount,
-      afterCount,
-      createdCount,
-      updatedCount,
-      errorCount,
-    },
-  };
-}
-
 
   @Put(':report_id')
   @UseGuards(AuthGuard)

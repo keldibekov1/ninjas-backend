@@ -31,10 +31,6 @@ export class OrdersService {
       },
     });
   }
-  async countByTenant(tenantId: number) {
-  return this.prisma.order.count({ where: { tenantId } });
-}
-
   
   async updateCoordinates(
     report_id: number,
