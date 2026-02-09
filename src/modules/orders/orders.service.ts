@@ -31,6 +31,10 @@ export class OrdersService {
       },
     });
   }
+  async countByTenant(tenantId: number) {
+  return this.prisma.order.count({ where: { tenantId } });
+}
+
   
   async updateCoordinates(
     report_id: number,
@@ -450,6 +454,7 @@ async getOrders(query: FilerOrdersQueryDto, tenantId: number) {
         .reduce((sum, expense) => sum + expense.amount, 0)
     }
   }));
+  
   const cleanedOrders = processedOrders.map(order => {
     const { bidPhotos, ...cleanOrder } = order;
     return cleanOrder;

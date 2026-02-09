@@ -40,81 +40,81 @@ export class OrdersController {
   ) {}
 
   @Get()
-@UseGuards(AuthGuard)
-@Permission('WORK_ORDER', ['READ'])
-async GetOrders(@Query() query: FilerOrdersQueryDto, @Req() req: Request) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
+  @UseGuards(AuthGuard)
+  @Permission('WORK_ORDER', ['READ'])
+  async GetOrders(@Query() query: FilerOrdersQueryDto, @Req() req: Request) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const syncedOrders = await this.ordersService.getOrders(query, tenantId);
+
+    return {
+      message: 'Ok',
+      isInitial: false,
+      orders: syncedOrders,
+    };
   }
 
-  const syncedOrders = await this.ordersService.getOrders(query, tenantId);
+  @Get('work-types')
+  @UseGuards(AuthGuard)
+  async GetWorkTypes(@Req() req: Request) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
 
-  return {
-    message: 'Ok',
-    isInitial: false,
-    orders: syncedOrders,
-  };
-}
+    const workTypes = await this.ordersService.getWorkTypes(tenantId);
 
-@Get('work-types')
-@UseGuards(AuthGuard)
-async GetWorkTypes(@Req() req: Request) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
+    return {
+      message: 'Work types retrieved successfully',
+      work_types: workTypes,
+    };
   }
 
-  const workTypes = await this.ordersService.getWorkTypes(tenantId);
+  @Get('cities')
+  @UseGuards(AuthGuard)
+  async GetCities(@Req() req: Request) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
 
-  return {
-    message: 'Work types retrieved successfully',
-    work_types: workTypes
-  };
-}
+    const cities = await this.ordersService.getCities(tenantId);
 
-@Get('cities')
-@UseGuards(AuthGuard)
-async GetCities(@Req() req: Request) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
+    return {
+      message: 'Cities retrieved successfully',
+      cities,
+    };
   }
 
-  const cities = await this.ordersService.getCities(tenantId);
+  @Get('states')
+  @UseGuards(AuthGuard)
+  async GetStates(@Req() req: Request) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
 
-  return {
-    message: 'Cities retrieved successfully',
-    cities
-  };
-}
+    const states = await this.ordersService.getStates(tenantId);
 
-@Get('states')
-@UseGuards(AuthGuard)
-async GetStates(@Req() req: Request) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
+    return {
+      message: 'States retrieved successfully',
+      states,
+    };
   }
 
-  const states = await this.ordersService.getStates(tenantId);
-
-  return {
-    message: 'States retrieved successfully',
-    states
-  };
-}
-
-@Get('sync/status')
-@UseGuards(AuthGuard)
-async getSyncStatus(@Req() req: Request) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
+  @Get('sync/status')
+  @UseGuards(AuthGuard)
+  async getSyncStatus(@Req() req: Request) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+    const status = await this.ordersService.getSyncStatus(tenantId);
+    return status;
   }
-  const status = await this.ordersService.getSyncStatus(tenantId);
-  return status;
-}
 
   @Get('sync-log')
   async GetSyncOrdersLog() {
@@ -135,30 +135,32 @@ async getSyncStatus(@Req() req: Request) {
   @Get('worker/:workerId')
   async GetWorkerOrders(
     @Param('workerId') workerId: number,
-    @Req() req: Request
+    @Req() req: Request,
   ) {
-      // Extract tenantId from the authenticated user
-// Check if the user is a global admin
-const isGlobalAdmin = req['globalAdmin'] !== undefined;
+    // Extract tenantId from the authenticated user
+    // Check if the user is a global admin
+    const isGlobalAdmin = req['globalAdmin'] !== undefined;
 
-// Extract tenantId from the authenticated user
-const tenantId = isGlobalAdmin ? null : req['user']?.tenantId;
-      
-    const findWorkerById = await this.workerService.findById(tenantId, workerId);
+    // Extract tenantId from the authenticated user
+    const tenantId = isGlobalAdmin ? null : req['user']?.tenantId;
+
+    const findWorkerById = await this.workerService.findById(
+      tenantId,
+      workerId,
+    );
     if (!findWorkerById) {
       throw new BadRequestException(`worker with id ${workerId} not found!`);
     }
-    
 
     const getWorkerAssignments =
-    await this.assignmentService.getWorkerAssignments(+workerId, tenantId);
-  
-  const reportIds = getWorkerAssignments.map((assignment) => 
-    'report_id' in assignment ? assignment.report_id : assignment.reportId
-  );
-  
-  const getWorkerAssignedOrders =
-    await this.ordersService.getOrdersByReportIds(reportIds);
+      await this.assignmentService.getWorkerAssignments(+workerId, tenantId);
+
+    const reportIds = getWorkerAssignments.map((assignment) =>
+      'report_id' in assignment ? assignment.report_id : assignment.reportId,
+    );
+
+    const getWorkerAssignedOrders =
+      await this.ordersService.getOrdersByReportIds(reportIds);
 
     return {
       message: `Worker assigned orders list is retrieved successfully!`,
@@ -167,276 +169,220 @@ const tenantId = isGlobalAdmin ? null : req['user']?.tenantId;
     };
   }
 
-
   @Get(':report_id')
-@UseGuards(AuthGuard)
-async GetSingleOrder(
-  @Param('report_id') report_id: string,
-  @Req() req: Request
-) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
-  }
-  
-  const order = await this.ordersService.findByReportId(
-    tenantId,
-    +report_id,
-    true,
-    true,
-  );
-
-  if (!order) {
-    throw new BadRequestException(`Order with id ${report_id} not found!`);
-  }
-
-  // Destructure the needed fields
-  const { JobNotes: job_notes, Tasks: tasks, assigned_workers, ...orderInfo } = order;
-
-  return {
-    message: `Workorder info is retrieved successfully!`,
-    info: { 
-      ...orderInfo, 
-      assigned_workers,
-      tasks,
-      job_notes
-    },
-  };
-}
-
-@Post()
-@UseGuards(AuthGuard)
-async CreateWorkOrder(
-  @Body() data: Omit<WorkOrderType, 'report_id'>,
-  @Req() req: Request
-) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
-  }
-
-  try {
-    // Check if we have address details to fetch coordinates
-    let coordinates = null;
-    if (data.address && data.city && data.state) {
-      try {
-        coordinates = await getCoordinates(
-          data.address,
-          data.city,
-          data.state
-        );
-      } catch (coordError) {
-        console.error('Error fetching coordinates:', coordError);
-        // Continue without coordinates if fetching fails
-      }
+  @UseGuards(AuthGuard)
+  async GetSingleOrder(
+    @Param('report_id') report_id: string,
+    @Req() req: Request,
+  ) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
     }
 
-    // Create the work order with coordinates
-    const newOrder = await this.ordersService.createManualOrder({
-      ...data,
-      coordinates,
-      tenantId
-    });
+    const order = await this.ordersService.findByReportId(
+      tenantId,
+      +report_id,
+      true,
+      true,
+    );
+
+    if (!order) {
+      throw new BadRequestException(`Order with id ${report_id} not found!`);
+    }
+
+    // Destructure the needed fields
+    const {
+      JobNotes: job_notes,
+      Tasks: tasks,
+      assigned_workers,
+      ...orderInfo
+    } = order;
 
     return {
-      message: 'Work order created successfully',
-      order: newOrder
+      message: `Workorder info is retrieved successfully!`,
+      info: {
+        ...orderInfo,
+        assigned_workers,
+        tasks,
+        job_notes,
+      },
     };
-  } catch (error) {
-    throw new BadRequestException(error.message);
   }
-}
 
+  @Post()
+  @UseGuards(AuthGuard)
+  async CreateWorkOrder(
+    @Body() data: Omit<WorkOrderType, 'report_id'>,
+    @Req() req: Request,
+  ) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
 
+    try {
+      // Check if we have address details to fetch coordinates
+      let coordinates = null;
+      if (data.address && data.city && data.state) {
+        try {
+          coordinates = await getCoordinates(
+            data.address,
+            data.city,
+            data.state,
+          );
+        } catch (coordError) {
+          console.error('Error fetching coordinates:', coordError);
+          // Continue without coordinates if fetching fails
+        }
+      }
 
-  @Post('sync')
+      // Create the work order with coordinates
+      const newOrder = await this.ordersService.createManualOrder({
+        ...data,
+        coordinates,
+        tenantId,
+      });
+
+      return {
+        message: 'Work order created successfully',
+        order: newOrder,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+@Post('sync')
 @HttpCode(HttpStatus.OK)
 @UseGuards(AuthGuard)
 async SyncOrders(@Req() req: Request) {
-  
   const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
-  }
-  
+  if (!tenantId) throw new BadRequestException('Tenant ID is required');
+
   const startTime = new Date();
-  
+
+  const beforeCount = await this.ordersService.countByTenant(tenantId);
+  console.log('DB orders before:', beforeCount);
+
   const PrimaryOrdersAPI = await this.apiPpwService.getAll(tenantId);
   const all_orders_primary: PrimaryOrdersListType = PrimaryOrdersAPI.data;
-  
+
+  const allAny = all_orders_primary as any;
+
+  if (!allAny?.success || allAny?.error || allAny?.auth_error) {
+    throw new BadRequestException(allAny?.return_error_msg || 'PPW getAll failed');
+  }
+
   const tasksFromDB = await this.taskService.getAll();
 
-  for (const workOrder of all_orders_primary.result_data) {
-    const singleOrderApi = await this.apiPpwService.getOne(
-      tenantId,
-      workOrder.report_id,
-    );
-    const primaryOrder: SingleOrderType = singleOrderApi.data;
+  let createdCount = 0;
+  let updatedCount = 0;
+  let errorCount = 0;
 
-    // Fetch coordinates if address, city, and state are available
-    let coordinates = null;
-    if (primaryOrder.result_data.address && 
-        primaryOrder.result_data.city && 
-        primaryOrder.result_data.state) {
-      coordinates = await getCoordinates(
-        primaryOrder.result_data.address,
-        primaryOrder.result_data.city,
-        primaryOrder.result_data.state
+  // ✅ MUHIM: result_data ni any’dan oling
+  const list: any[] = allAny?.result_data || [];
+  console.log('PPW orders count:', list.length);
+
+  for (const workOrder of list) {
+    try {
+      console.log('SYNC report_id:', workOrder.report_id);
+
+      const singleOrderApi = await this.apiPpwService.getOne(
+        tenantId,
+        workOrder.report_id,
       );
-      
-      await delay(1000); // 1 second delay between requests
-    }
 
-    // delete unnecessary fields
-    delete primaryOrder.remote_site_id;
-    delete primaryOrder.success;
-    delete primaryOrder.return_error_msg;
+      const primaryOrder: SingleOrderType = singleOrderApi.data;
+      const primaryAny = primaryOrder as any;
 
-    // assign single order data to details field
-    workOrder.details = primaryOrder.result_data;
+      if (!primaryAny?.success || primaryAny?.error || primaryAny?.auth_error) {
+        throw new Error(primaryAny?.return_error_msg || 'PPW getOne failed');
+      }
 
-    const findByReportId = await this.ordersService.findByReportId(
-      tenantId,
-      workOrder.report_id,
-    );
+      // ✅ details ni any qilib olamiz (type xatolar bo‘lmasin)
+      const details: any = primaryAny.result_data;
+      workOrder.details = details;
 
-    if (findByReportId) {
-      // update work order details - Fixed parameter order here
-      await this.ordersService.update(workOrder.report_id, tenantId, {
-        address: workOrder.details.address,
-        city: workOrder.details.city,
-        zip: workOrder.details.zip,
-        coordinates: coordinates || findByReportId.coordinates,
-        broker_company: workOrder.details.broker_company,
-        broker_email: workOrder.details.broker_email,
-        autoimport_client_orig: workOrder.details.key_values.autoimport_client_orig,
-        autoimport_userid: workOrder.details.key_values.autoimport_userid,
-        bg_checkin_provider: workOrder.details.key_values.bg_checkin_provider,
-        broker_name: workOrder.details.broker_name,
-        broker_phone: workOrder.details.broker_phone,
-        comments: workOrder.details.comments,
-        client_company_alias: workOrder.details.client_company_alias,
-        cust_text: String(workOrder.details.cust_text),
-        date_due: workOrder.details.date_due,
-        has_foh: workOrder.details.has_foh,
-        date_received: workOrder.details.date_received,
-        import_user_id: workOrder.details.import_user_id,
-        key_code: workOrder.details.key_code,
-        loan_number: workOrder.details.loan_number,
-        loan_type_other: workOrder.details.loan_type_other,
-        lock_code: workOrder.details.lock_code,
-        lot_size: workOrder.details.lot_size,
-        mcs_woid: workOrder.details.key_values.mcs_woid,
-        mortgage_name: workOrder.details.mortgage_name,
-        org_wo_num: workOrder.org_wo_num,
-        start_date: workOrder.details.start_date,
-        state: workOrder.details.state,
-        ppw_report_id: workOrder.details.ppw_report_id,
-        wo_number: workOrder.wo_number,
-        wo_number_orig: workOrder.details.key_values.wo_number_orig,
-        wo_status: workOrder.details.wo_status,
-        wo_photo_ts_format: workOrder.details.key_values.wo_photo_ts_format,
-        work_type_alias: workOrder.details.work_type_alias,
-        tenantId
-      });
-
-        // update task details
-        for (const line_item_task of workOrder.details.line_items) {
-          const isExistedTask = tasksFromDB.find((item) => {
-            return (
-              item.report_id === workOrder.report_id &&
-              item.desc === line_item_task.desc
-            );
-          });
-
-          if (!isExistedTask) {
-            const possibleDataTask = tasksFromDB.find((item) => {
-              item.desc = item.desc.replace(/\s/g, '').toLowerCase();
-
-              return (
-                item.report_id === workOrder.report_id &&
-                isSimilar(
-                  item.desc,
-                  findMostSuitableDescription(
-                    line_item_task.desc,
-                    tasksFromDB
-                      .filter((task) => task.report_id === workOrder.report_id)
-                      .map((task) => task.desc),
-                  )
-                    .replace(/\s/g, '')
-                    .toLowerCase(),
-                )
-              );
-            });
-
-            if (possibleDataTask) {
-              await this.taskService.update(possibleDataTask.id, {
-                desc: line_item_task.desc,
-                add: line_item_task.add,
-                qty: line_item_task.qty,
-                price: line_item_task.price,
-                total: line_item_task.total,
-                tenantId
-              });
-            }
-          } else {
-            // just update info if existed (easy, all complex logic is above, if not exist!)
-            await this.taskService.update(isExistedTask.id, {
-              desc: line_item_task.desc,
-              add: line_item_task.add,
-              qty: line_item_task.qty,
-              price: line_item_task.price,
-              total: line_item_task.total,
-              tenantId
-            });
-          }
+      // Coordinates
+      let coordinates: string | null = null;
+      if (details?.address && details?.city && details?.state) {
+        try {
+          coordinates = await getCoordinates(details.address, details.city, details.state);
+        } catch (e) {
+          console.log('getCoordinates error:', details.address, details.city, details.state);
         }
+        await delay(1000);
+      }
+
+      const findByReportId = await this.ordersService.findByReportId(
+        tenantId,
+        workOrder.report_id,
+      );
+      console.log('exists:', !!findByReportId);
+
+      // ✅ key_values type fix
+      const keyValues: Record<string, any> = details?.key_values || {};
+
+      const payload = {
+        address: details?.address ?? null,
+        city: details?.city ?? null,
+        zip: details?.zip ?? null,
+        coordinates: coordinates ?? (findByReportId?.coordinates ?? null),
+
+        broker_company: details?.broker_company ?? null,
+        broker_email: details?.broker_email ?? null,
+
+        autoimport_client_orig: keyValues.autoimport_client_orig ?? null,
+        autoimport_userid: keyValues.autoimport_userid ?? null,
+        bg_checkin_provider: keyValues.bg_checkin_provider ?? null,
+
+        broker_name: details?.broker_name ?? null,
+        broker_phone: details?.broker_phone ?? null,
+        comments: details?.comments ?? null,
+        client_company_alias: details?.client_company_alias ?? null,
+        cust_text: String(details?.cust_text ?? ''),
+        date_due: details?.date_due ?? null,
+        has_foh: details?.has_foh ?? null,
+        date_received: details?.date_received ?? null,
+        import_user_id: details?.import_user_id ?? null,
+        key_code: details?.key_code ?? null,
+        loan_number: details?.loan_number ?? null,
+        loan_type_other: details?.loan_type_other ?? null,
+        lock_code: details?.lock_code ?? null,
+        lot_size: details?.lot_size ?? null,
+        mcs_woid: keyValues.mcs_woid ?? null,
+        mortgage_name: details?.mortgage_name ?? null,
+
+        org_wo_num: workOrder?.org_wo_num ?? null,
+        start_date: details?.start_date ?? null,
+        state: details?.state ?? null,
+        ppw_report_id: details?.ppw_report_id ?? null,
+
+        wo_number: workOrder?.wo_number ?? details?.wo_number ?? null,
+        wo_number_orig: keyValues.wo_number_orig ?? null,
+        wo_status: details?.wo_status ?? workOrder?.wo_status ?? null,
+        wo_photo_ts_format: keyValues.wo_photo_ts_format ?? null,
+        work_type_alias: details?.work_type_alias ?? null,
+
+        tenantId,
+      };
+
+      if (findByReportId) {
+        await this.ordersService.update(workOrder.report_id, tenantId, payload as any);
+        updatedCount++;
       } else {
-        // create work orders
         await this.ordersService.create({
           report_id: workOrder.report_id,
-          address: workOrder.details?.address,
-          city: workOrder.details?.city,
-          zip: workOrder.details?.zip,
-          coordinates: coordinates,
-          broker_company: workOrder.details?.broker_company,
-          broker_email: workOrder.details?.broker_email,
-          autoimport_client_orig: workOrder.details?.key_values.autoimport_client_orig,
-          autoimport_userid: workOrder.details?.key_values.autoimport_userid,
-          bg_checkin_provider: workOrder.details.key_values.bg_checkin_provider,
-          broker_name: workOrder.details.broker_name,
-          broker_phone: workOrder.details.broker_phone,
-          comments: workOrder.details.comments,
-          client_company_alias: workOrder.details.client_company_alias,
-          cust_text: String(workOrder.details.cust_text),
-          date_due: workOrder.details.date_due,
-          has_foh: workOrder.details.has_foh,
-          date_received: workOrder.details.date_received,
-          import_user_id: workOrder.details.import_user_id,
-          key_code: workOrder.details.key_code,
-          loan_number: workOrder.details.loan_number,
-          loan_type_other: workOrder.details.loan_type_other,
-          lock_code: workOrder.details.lock_code,
-          lot_size: workOrder.details.lot_size,
-          mcs_woid: workOrder.details.key_values.mcs_woid,
-          mortgage_name: workOrder.details.mortgage_name,
-          org_wo_num: workOrder.org_wo_num,
-          start_date: workOrder.details.start_date,
-          state: workOrder.details.state,
-          ppw_report_id: workOrder.details.ppw_report_id,
-          wo_number: workOrder.wo_number,
-          wo_number_orig: workOrder.details.key_values.wo_number_orig,
-          wo_status: workOrder.details.wo_status,
-          wo_photo_ts_format: workOrder.details.key_values.wo_photo_ts_format,
-          work_type_alias: workOrder.details.work_type_alias,
-          tenantId
-        });
+          ...payload,
+        } as any);
+        createdCount++;
 
-        // create task related to report_id
+        // create tasks related to report_id
         await this.taskService.create(
           tenantId,
           workOrder.report_id,
-          workOrder.details.line_items,
+          details?.line_items ?? [],
         );
 
         // create job notes
@@ -444,117 +390,176 @@ async SyncOrders(@Req() req: Request) {
           tenantId,
           workOrder.report_id,
         );
-        const notesData: PrimaryJobNotesType[] =
-          jobNotesPrimary?.data?.result_data;
 
-        if (notesData.length !== 0) {
+        const jobNotesAny = jobNotesPrimary?.data as any;
+        const notesData: any[] = jobNotesAny?.result_data ?? [];
+
+        if (notesData.length) {
           for (const note of notesData) {
             await this.jobNotesService.create({
               report_id: workOrder.report_id,
               note_text: note.note_text,
-              tenantId
+              tenantId,
             });
           }
         }
       }
+
+      // tasks update
+      for (const line_item_task of (details?.line_items ?? []) as any[]) {
+        const isExistedTask = tasksFromDB.find(
+          (item) =>
+            item.report_id === workOrder.report_id &&
+            item.desc === line_item_task.desc,
+        );
+
+        if (!isExistedTask) {
+          const possibleDataTask = tasksFromDB.find((item) => {
+            const normalized = (item.desc || '').replace(/\s/g, '').toLowerCase();
+
+            const best = findMostSuitableDescription(
+              line_item_task.desc,
+              tasksFromDB
+                .filter((t) => t.report_id === workOrder.report_id)
+                .map((t) => t.desc),
+            )
+              .replace(/\s/g, '')
+              .toLowerCase();
+
+            return item.report_id === workOrder.report_id && isSimilar(normalized, best);
+          });
+
+          if (possibleDataTask) {
+            await this.taskService.update(possibleDataTask.id, {
+              desc: line_item_task.desc,
+              add: line_item_task.add,
+              qty: line_item_task.qty,
+              price: line_item_task.price,
+              total: line_item_task.total,
+              tenantId,
+            });
+          }
+        } else {
+          await this.taskService.update(isExistedTask.id, {
+            desc: line_item_task.desc,
+            add: line_item_task.add,
+            qty: line_item_task.qty,
+            price: line_item_task.price,
+            total: line_item_task.total,
+            tenantId,
+          });
+        }
+      }
+    } catch (e: any) {
+      errorCount++;
+      console.error('SYNC ERROR report_id:', workOrder?.report_id, e?.message);
+    }
+  }
+
+  // Refresh coordinates for existing orders with missing data
+  const existingOrdersWithoutCoordinates =
+    await this.ordersService.getOrdersWithoutCoordinates(tenantId);
+
+  for (const order of existingOrdersWithoutCoordinates) {
+    const { address, city, state } = order;
+
+    try {
+      const coordinates = await getCoordinates(address, city, state);
+      if (coordinates) {
+        await this.ordersService.updateCoordinates(order.report_id, tenantId, coordinates);
+      }
+    } catch (error) {
+      console.error(`Error updating coordinates for order ${order.report_id}:`, error);
     }
 
-    // Refresh coordinates for existing orders with missing data
-const existingOrdersWithoutCoordinates = 
-await this.ordersService.getOrdersWithoutCoordinates(tenantId);
-
-for (const order of existingOrdersWithoutCoordinates) {
-const { address, city, state } = order;
-
-try {
-  const coordinates = await getCoordinates(address, city, state);
-  
-  if (coordinates) {
-    await this.ordersService.updateCoordinates(
-      order.report_id,
-      tenantId,
-      coordinates
-    );
+    await delay(1000);
   }
-} catch (error) {
-  console.error(
-    `Error updating coordinates for order ${order.report_id}:`,
-    error
-  );
-}
 
-await delay(1000); // Respect rate limits
-}
-     // Calculate the elapsed time
   const endTime = new Date();
   const elapsedTime = endTime.getTime() - startTime.getTime();
-
-  // Format the elapsed time
   const formattedTime = formatTime(elapsedTime);
 
-  // update sync log time
   await this.ordersService.syncLog(tenantId, formattedTime);
+
+  const afterCount = await this.ordersService.countByTenant(tenantId);
+  console.log('DB orders after:', afterCount);
 
   return {
     message: 'Orders is synced successfully!',
     spentTime: formattedTime,
+    stats: {
+      beforeCount,
+      afterCount,
+      createdCount,
+      updatedCount,
+      errorCount,
+    },
   };
-  
 }
 
-@Put(':report_id')
-@UseGuards(AuthGuard)
-async UpdateWorkOrder(
-  @Param('report_id') report_id: string,
-  @Body() data: UpdateWorkOrderDto,
-  @Req() req: Request
-) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
-  }
-  
-  const findWorkOrder = await this.ordersService.findByReportId(tenantId, +report_id);
-  if (!findWorkOrder) {
-    throw new BadRequestException(
-      `order with report_id ${report_id} not found!`,
+
+  @Put(':report_id')
+  @UseGuards(AuthGuard)
+  async UpdateWorkOrder(
+    @Param('report_id') report_id: string,
+    @Body() data: UpdateWorkOrderDto,
+    @Req() req: Request,
+  ) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const findWorkOrder = await this.ordersService.findByReportId(
+      tenantId,
+      +report_id,
     );
-  }
+    if (!findWorkOrder) {
+      throw new BadRequestException(
+        `order with report_id ${report_id} not found!`,
+      );
+    }
 
-  // Fix the parameter order here
-  const updateOrder = await this.ordersService.update(+report_id, tenantId, data);
-
-  return {
-    message: `Order is updated successfully!`,
-    info: updateOrder,
-  };
-}
-
-@Delete(':report_id')
-@UseGuards(AuthGuard)
-@Permission('WORK_ORDER', ['DELETE']) // Assuming you have a DELETE permission
-async DeleteWorkOrder(
-  @Param('report_id') report_id: string,
-  @Req() req: Request
-) {
-  const tenantId = req['user']?.tenantId;
-  if (!tenantId) {
-    throw new BadRequestException('Tenant ID is required');
-  }
-  
-  const findWorkOrder = await this.ordersService.findByReportId(tenantId, +report_id);
-  if (!findWorkOrder) {
-    throw new BadRequestException(
-      `Order with report_id ${report_id} not found!`,
+    // Fix the parameter order here
+    const updateOrder = await this.ordersService.update(
+      +report_id,
+      tenantId,
+      data,
     );
+
+    return {
+      message: `Order is updated successfully!`,
+      info: updateOrder,
+    };
   }
 
-  await this.ordersService.deleteOrder(+report_id, tenantId);
+  @Delete(':report_id')
+  @UseGuards(AuthGuard)
+  @Permission('WORK_ORDER', ['DELETE']) // Assuming you have a DELETE permission
+  async DeleteWorkOrder(
+    @Param('report_id') report_id: string,
+    @Req() req: Request,
+  ) {
+    const tenantId = req['user']?.tenantId;
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
 
-  return {
-    message: `Order with report_id ${report_id} has been deleted successfully!`,
-    deletedReportId: +report_id
-  };
-}
+    const findWorkOrder = await this.ordersService.findByReportId(
+      tenantId,
+      +report_id,
+    );
+    if (!findWorkOrder) {
+      throw new BadRequestException(
+        `Order with report_id ${report_id} not found!`,
+      );
+    }
 
+    await this.ordersService.deleteOrder(+report_id, tenantId);
+
+    return {
+      message: `Order with report_id ${report_id} has been deleted successfully!`,
+      deletedReportId: +report_id,
+    };
+  }
 }
