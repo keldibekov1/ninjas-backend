@@ -326,6 +326,9 @@ model Order {
   completed_date         DateTime?
   bit_photos_url         String?
 
+  rejected_reason String?
+  rejected_at DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

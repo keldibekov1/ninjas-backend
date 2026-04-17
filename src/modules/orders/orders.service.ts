@@ -547,6 +547,11 @@ async getOrders(query: FilerOrdersQueryDto, tenantId: number) {
           ...data,
           completed_date:
             data.status && data.status === 'COMPLETED' ? new Date() : undefined,
+
+            rejected_reason:
+            data.status === 'REJECTED' ? data.rejected_reason : null,
+
+          rejected_at: data.status === 'REJECTED' ? new Date() : null,
         },
       });
     } catch (error) {

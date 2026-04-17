@@ -156,4 +156,8 @@ export class UpdateWorkOrderDto {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+
+  @IsOptional()
+  @IsString()
+  rejected_reason?: string;
 }
