@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../s3/s3.service';
 import { Response } from 'express';
-import archiver from 'archiver';
+import * as archiver from 'archiver';
 import { PhotoType } from '@prisma/client';
 
 @Injectable()
