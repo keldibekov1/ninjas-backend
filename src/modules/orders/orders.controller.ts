@@ -11,9 +11,11 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
+import { Response } from 'express';
 import { ApiPpwService } from '../api-ppw/api-ppw.service';
 import { PrimaryOrdersListType, SingleOrderType } from '../api-ppw/types';
 import { TaskService } from '../task/task.service';
@@ -27,7 +29,10 @@ import { JobNotesService } from '../job-notes/job-notes.service';
 import { PrimaryJobNotesType } from '../job-notes/types';
 import { delay, getCoordinates } from 'src/utils/coordinates';
 import { WorkOrderType } from './types';
+import { OrdersExcelService } from './excel.service';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags("orders")
 @Controller('orders')
 export class OrdersController {
   constructor(
@@ -37,6 +42,7 @@ export class OrdersController {
     private readonly workerService: WorkerService,
     private readonly assignmentService: AssignmentService,
     private readonly jobNotesService: JobNotesService,
+    private readonly ordersExcelService: OrdersExcelService
   ) {}
 
   @Get()
@@ -55,6 +61,29 @@ export class OrdersController {
       isInitial: false,
       orders: syncedOrders,
     };
+  }
+
+ @Get('export/excel')
+  @UseGuards(AuthGuard)
+  async exportExcel(
+    @Query() query: FilerOrdersQueryDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+     console.log('req.user:', JSON.stringify((req as any).user));
+    const tenantId = (req as any).user?.tenantId;
+    console.log('tenantId:', tenantId);
+    const buffer = await this.ordersExcelService.generateExcel(query, Number(tenantId));
+ 
+    const filename = `work-orders-${new Date().toISOString().split('T')[0]}.xlsx`;
+ 
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+ 
+    res.end(buffer);
   }
 
   @Get('work-types')

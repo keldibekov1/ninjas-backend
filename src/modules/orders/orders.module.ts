@@ -15,10 +15,11 @@ import { ExpenseService } from '../expense/expense.service';
 import { S3Service } from '../s3/s3.service';
 import { ExpenseModule } from '../expense/expense.module';
 import { ConfigModule } from '@nestjs/config';
+import { OrdersExcelService } from './excel.service';
 
 @Module({
   controllers: [OrdersController],
-  providers: [OrdersService, JwtService, OrdersSyncService, S3Service],
+  providers: [OrdersService, JwtService, OrdersSyncService, S3Service,OrdersExcelService],
   imports: [
     ApiPpwModule,
     PrismaModule,
