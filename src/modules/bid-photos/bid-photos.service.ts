@@ -108,70 +108,75 @@ export class BidPhotosService {
     }
   }
 
-  async streamPhotoZip(photoIds: number[], tenantId: number, res: Response) {
-    // Verify photos exist and belong to tenant
-    const photos = await this.prisma.bidPhoto.findMany({
-      where: {
-        id: { in: photoIds },
-        tenantId,
-      },
-      select: {
-        id: true,
-        url: true,
-        filename: true,
-      },
+async streamPhotoZip(photoIds: number[], tenantId: number, res: Response) {
+  const photos = await this.prisma.bidPhoto.findMany({
+    where: {
+      id: { in: photoIds },
+      tenantId,
+    },
+    select: {
+      id: true,
+      url: true,
+      filename: true,
+    },
+  });
+
+  if (photos.length !== photoIds.length) {
+    console.error('Some photos not found:', {
+      requestedIds: photoIds,
+      foundIds: photos.map((p) => p.id),
     });
+    throw new NotFoundException('Some photos were not found');
+  }
 
-    if (photos.length !== photoIds.length) {
-      console.error('Some photos not found:', {
-        requestedIds: photoIds,
-        foundIds: photos.map((p) => p.id),
-      });
-      throw new NotFoundException('Some photos were not found');
-    }
+  const archive = archiver.create('zip', {
+    zlib: { level: 0 },
+  });
 
-    const archive = archiver('zip', {
-      zlib: { level: 0 }, // Lower compression for better performance
-    });
+  archive.pipe(res);
 
-    // Pipe archive data to response
-    archive.pipe(res);
+  archive.on('error', (err) => {
+    console.error('Archiver error:', err);
+    res.end();
+  });
 
-    // Handle archiver errors
-    archive.on('error', (err) => {
-      console.error('Archiver error:', err);
-      res.end();
-    });
+  archive.on('warning', (err) => {
+    console.warn('Archiver warning:', err);
+  });
 
-    archive.on('warning', (err) => {
-      console.warn('Archiver warning:', err);
-    });
+  try {
+    const CHUNK_SIZE = 5;
+    for (let i = 0; i < photos.length; i += CHUNK_SIZE) {
+      const chunk = photos.slice(i, i + CHUNK_SIZE);
 
-    try {
-      // Process photos sequentially to avoid memory issues
-      for (const photo of photos) {
-        try {
-          // Get the file from S3
-          const stream = await this.s3Service.getFileStream(photo.url);
-          const fileName = photo.filename || `photo-${photo.id}.jpg`;
+      const streams = await Promise.all(
+        chunk.map(async (photo) => {
+          try {
+            const stream = await this.s3Service.getFileStream(photo.url);
+            return { stream, fileName: photo.filename || `photo-${photo.id}.jpg` };
+          } catch (error) {
+            console.error(`Failed to add photo ${photo.id} to zip:`, error);
+            return null;
+          }
+        })
+      );
 
-          // Add file to archive
-          archive.append(stream, { name: fileName });
-        } catch (error) {
-          console.error(`Failed to add photo ${photo.id} to zip:`, error);
-          // Continue with other photos
+      for (const item of streams) {
+        if (item) {
+          archive.append(item.stream, { name: item.fileName });
         }
       }
-
-      await archive.finalize();
-    } catch (error) {
-      console.error('Error creating zip:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to create zip file' });
-      }
-      res.end();
     }
+
+    await archive.finalize();
+  } catch (error) {
+    console.error('Error creating zip:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to create zip file' });
+    }
+    res.end();
   }
+}
 
   async uploadPhotos(
     tenantId: number,
