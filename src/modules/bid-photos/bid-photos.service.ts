@@ -131,7 +131,7 @@ export class BidPhotosService {
     }
 
     const archive = archiver('zip', {
-      zlib: { level: 3 }, // Lower compression for better performance
+      zlib: { level: 0 }, // Lower compression for better performance
     });
 
     // Pipe archive data to response
